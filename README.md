@@ -21,7 +21,7 @@
 
 ## 📖 简介
 
-**biliVideo** 是一款运行在 [AstrBot]((https://astrbot.app/) 上的 B站视频总结插件。
+**biliVideo** 是一款运行在 [AstrBot]((https://astrbot.app/)) 上的 B站视频总结插件。
 
 你只需要丢一个B站视频链接，插件就会自动下载音频、提取字幕、调用 AI 大模型，生成一份结构化的视频总结 —— 并渲染成精美的暗色主题卡片图片发送到群聊。
 
@@ -43,7 +43,7 @@
 
 ### 前置要求
 
-- [AstrBot]((https://astrbot.app/) v4.0+
+- [AstrBot]((https://astrbot.app/)) v4.0+
 - 已配置至少一个 LLM Provider（如 DeepSeek、OpenAI 等）
 
 ### 步骤
@@ -201,7 +201,7 @@ You can also **subscribe to content creators** and receive automatic summary pus
 
 ### Prerequisites
 
-- [AstrBot]((https://astrbot.app/) v4.0+
+- [AstrBot]((https://astrbot.app/)) v4.0+
 - At least one LLM Provider configured (e.g., DeepSeek, OpenAI)
 
 ### Steps
