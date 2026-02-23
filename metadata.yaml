@@ -1,0 +1,6 @@
+name: astrbot_plugin_bilivideo
+display_name: biliVideo 视频总结
+desc: 丢个B站链接，自动总结视频要点，订阅UP主定时推送
+version: v1.0.0
+author: storyAura
+repo: https://github.com/storyAura/astrbot_plugin_biliVideo

@@ -1,0 +1,49 @@
+# 多余文件夹（参考项目、其他插件、旧版）
+BiliNote-master/
+astrbot-plugin-bilinote/
+astrbot-plugin-pic-mirror-fork/
+astrbot_plugin_bilivideo+/
+*.zip
+test_layout.html
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 运行时数据 (包含隐私信息)
+data/
+*.json
+!_conf_schema.json
+
+# B站登录 Cookie (绝对不要上传!)
+bili_cookies.json
+
+# 生成的图片
+*.png
+!logo.png
+
+# 音频文件
+*.mp3
+*.wav
+*.m4a
+*.flac
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 虚拟环境
+venv/
+.env/
