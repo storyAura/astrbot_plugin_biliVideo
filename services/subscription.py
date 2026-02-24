@@ -1,9 +1,10 @@
+import copy
 import json
-import logging
 import os
+import threading
 from typing import Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from astrbot.api import logger
 
 
 class SubscriptionManager:
@@ -26,6 +27,7 @@ class SubscriptionManager:
         self.data_dir = data_dir
         os.makedirs(data_dir, exist_ok=True)
         self.data_file = os.path.join(data_dir, "subscriptions.json")
+        self._lock = threading.Lock()
         self._data = self._load()
 
     def _load(self) -> dict:
@@ -38,11 +40,12 @@ class SubscriptionManager:
         return {"subscriptions": {}}
 
     def _save(self):
-        try:
-            with open(self.data_file, 'w', encoding='utf-8') as f:
-                json.dump(self._data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.error(f"保存订阅数据失败: {e}")
+        with self._lock:
+            try:
+                with open(self.data_file, 'w', encoding='utf-8') as f:
+                    json.dump(self._data, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                logger.error(f"保存订阅数据失败: {e}")
 
     def add_subscription(self, origin: str, mid: str, name: str) -> bool:
         """
@@ -95,7 +98,7 @@ class SubscriptionManager:
         subs = self._data["subscriptions"]
         if origin not in subs:
             return []
-        return subs[origin]["up_list"]
+        return copy.deepcopy(subs[origin]["up_list"])
 
     def get_subscription_count(self, origin: str) -> int:
         """获取某会话的订阅数量"""
@@ -109,7 +112,7 @@ class SubscriptionManager:
         """
         result = {}
         for origin, data in self._data["subscriptions"].items():
-            result[origin] = data["up_list"]
+            result[origin] = copy.deepcopy(data["up_list"])
         return result
 
     def update_last_video(self, origin: str, mid: str, bvid: str):

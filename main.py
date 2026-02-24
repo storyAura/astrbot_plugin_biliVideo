@@ -6,8 +6,7 @@ BiliVideo 视频总结插件
 
 import asyncio
 import os
-
-import aiohttp
+import uuid
 
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star
@@ -38,19 +37,6 @@ class BiliVideoPlugin(Star):
         # Debug 模式 —— 在其他所有初始化之前设置
         self._debug_mode = bool(self.config.get("debug_mode", False))
         if self._debug_mode:
-            import logging as _logging
-            # 设置插件所有模块为 DEBUG 级别
-            plugin_logger = _logging.getLogger("astrbot_plugin_BiliVideo")
-            plugin_logger.setLevel(_logging.DEBUG)
-            # 确保有 handler 能输出 DEBUG，AstrBot 默认可能只输出 INFO
-            if not any(h.level <= _logging.DEBUG for h in plugin_logger.handlers):
-                handler = _logging.StreamHandler()
-                handler.setLevel(_logging.DEBUG)
-                handler.setFormatter(_logging.Formatter(
-                    "[%(asctime)s] [BiliVideo/DEBUG] %(name)s: %(message)s",
-                    datefmt="%H:%M:%S"
-                ))
-                plugin_logger.addHandler(handler)
             logger.info("═══════════ [BiliVideo] Debug 模式已启用 ═══════════")
 
         self._log("══════ [BiliVideo] 插件初始化开始 ══════")
@@ -147,7 +133,7 @@ class BiliVideoPlugin(Star):
 
             if self.access_mode == 'whitelist':
                 for gid in self.group_list:
-                    if gid in origin:
+                    if f':{gid}' in origin or origin.endswith(gid):
                         self._log(f"[AccessCheck] 白名单命中: {gid}")
                         return True
                 self._log("[AccessCheck] 白名单未命中, 拒绝")
@@ -155,7 +141,7 @@ class BiliVideoPlugin(Star):
 
             elif self.access_mode == 'blacklist':
                 for gid in self.group_list:
-                    if gid in origin:
+                    if f':{gid}' in origin or origin.endswith(gid):
                         self._log(f"[AccessCheck] 黑名单命中: {gid}, 拒绝")
                         return False
                 self._log("[AccessCheck] 黑名单未命中, 放行")
@@ -167,9 +153,11 @@ class BiliVideoPlugin(Star):
         return True
 
     @staticmethod
-    def _parse_args(message_str: str) -> str:
+    def _parse_args(message_str) -> str:
         """从完整消息中提取命令后的参数"""
-        parts = message_str.strip().split(maxsplit=1)
+        if not message_str:
+            return ""
+        parts = str(message_str).strip().split(maxsplit=1)
         return parts[1].strip() if len(parts) > 1 else ""
 
     def _render_and_get_chain(self, note_text: str):
@@ -274,16 +262,16 @@ class BiliVideoPlugin(Star):
             yield event.plain_result("❌ 获取二维码数据失败")
             return
 
-        # 本地生成二维码图片（segno 纯 Python，无需 PIL）
+        # 本地生成二维码图片
         try:
             try:
                 import segno
             except ImportError:
-                import subprocess, sys
-                subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'segno'])
-                import segno
+                yield event.plain_result("❌ 缺少 segno 依赖，请运行: pip install segno")
+                return
 
-            qr_path = os.path.join(self.data_dir, "login_qr.png")
+            qr_filename = f"login_qr_{uuid.uuid4().hex[:8]}.png"
+            qr_path = os.path.join(self.data_dir, qr_filename)
             qr = segno.make(qr_url)
             qr.save(qr_path, scale=10, border=4)
         except Exception as e:

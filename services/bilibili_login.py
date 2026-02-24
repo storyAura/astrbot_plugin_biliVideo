@@ -1,12 +1,14 @@
 import asyncio
 import json
-import logging
 import os
 from typing import Optional
+from urllib.parse import unquote
 
 import aiohttp
 
-logger = logging.getLogger(__name__)
+from astrbot.api import logger
+
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 QR_GENERATE_URL = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate"
 QR_POLL_URL = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll"
@@ -60,7 +62,7 @@ class BilibiliLogin:
         :return: {"url": "...", "qrcode_key": "..."} 或 None
         """
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
                 async with session.get(QR_GENERATE_URL, headers=HEADERS) as resp:
                     if resp.status != 200:
                         logger.error(f"申请二维码失败, HTTP {resp.status}")
@@ -86,7 +88,7 @@ class BilibiliLogin:
         params = {"qrcode_key": qrcode_key}
 
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
                 async with session.get(QR_POLL_URL, params=params, headers=HEADERS) as resp:
                     if resp.status != 200:
                         return {"status": "error", "cookies": None}
@@ -160,13 +162,16 @@ class BilibiliLogin:
             if '=' in param:
                 key, value = param.split('=', 1)
                 if key in ('SESSDATA', 'bili_jct', 'DedeUserID', 'sid'):
-                    cookies[key] = value
+                    cookies[key] = unquote(value)
 
         return cookies
 
     def logout(self):
         """清除登录状态"""
         self._cookies = {}
-        if os.path.exists(self.cookies_path):
-            os.remove(self.cookies_path)
-        logger.info("B站登录状态已清除")
+        try:
+            if os.path.exists(self.cookies_path):
+                os.remove(self.cookies_path)
+        except OSError as e:
+            logger.warning(f"删除 Cookie 文件失败: {e}")
+        logger.info("“站登录状态已清除")

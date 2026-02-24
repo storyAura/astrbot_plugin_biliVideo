@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Union
+from typing import List, Optional
 
 from ..models.audio_model import AudioDownloadResult
 from ..models.transcriber_model import TranscriptResult

@@ -24,8 +24,13 @@ NOTE_STYLES = {
 
 
 def format_time(seconds: float) -> str:
-    """将秒数转换为 mm:ss 格式"""
-    return str(timedelta(seconds=int(seconds)))[2:]
+    """将秒数转换为 mm:ss 或 h:mm:ss 格式"""
+    total = int(seconds)
+    h, remainder = divmod(total, 3600)
+    m, s = divmod(remainder, 60)
+    if h > 0:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
 
 
 def build_segment_text(segments: List[TranscriptSegment]) -> str:

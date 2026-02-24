@@ -1,16 +1,14 @@
 import os
 import json
-import logging
 import re
-from typing import Union, Optional, List
+from typing import Optional, List
 
 import yt_dlp
 
+from astrbot.api import logger
 from .base import Downloader, QUALITY_MAP
 from ..models.audio_model import AudioDownloadResult
 from ..models.transcriber_model import TranscriptResult, TranscriptSegment
-
-logger = logging.getLogger(__name__)
 
 
 class BilibiliDownloader(Downloader):
@@ -38,7 +36,7 @@ class BilibiliDownloader(Downloader):
     def download(
         self,
         video_url: str,
-        output_dir: Union[str, None] = None,
+        output_dir: Optional[str] = None,
         quality: str = "fast",
     ) -> AudioDownloadResult:
         """下载B站视频的音频"""

@@ -1,15 +1,14 @@
 import asyncio
-import logging
 import os
 from typing import Optional
+
+from astrbot.api import logger
 
 from ..downloaders.bilibili_downloader import BilibiliDownloader
 from ..transcriber.bcut import BcutTranscriber
 from ..gpt.prompt_builder import build_prompt
 from ..utils.note_helper import replace_content_markers
 from ..utils.url_parser import extract_video_id
-
-logger = logging.getLogger(__name__)
 
 
 class NoteService:
@@ -61,7 +60,7 @@ class NoteService:
 
             # 2. 获取字幕（优先平台字幕）
             logger.info("尝试获取平台字幕...")
-            transcript = await asyncio.get_event_loop().run_in_executor(
+            transcript = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: self.downloader.download_subtitles(video_url)
             )
@@ -69,7 +68,7 @@ class NoteService:
             # 3. 如果没有字幕，使用 bcut 转写
             if not transcript or not transcript.segments:
                 logger.info("无平台字幕，使用必剪转写...")
-                transcript = await asyncio.get_event_loop().run_in_executor(
+                transcript = await asyncio.get_running_loop().run_in_executor(
                     None,
                     lambda: self.transcriber.transcript(audio_meta.file_path)
                 )
@@ -124,6 +123,13 @@ class NoteService:
         except Exception as e:
             logger.error(f"总结生成失败: {e}", exc_info=True)
             return f"❌ 总结生成失败: {str(e)}"
+        finally:
+            # 清理音频文件（无论成功还是失败）
+            try:
+                if audio_meta and hasattr(audio_meta, 'file_path'):
+                    self._cleanup(audio_meta.file_path)
+            except Exception:
+                pass
 
     def _cleanup(self, file_path: str):
         """清理临时音频文件"""
