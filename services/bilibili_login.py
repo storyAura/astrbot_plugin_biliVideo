@@ -174,4 +174,4 @@ class BilibiliLogin:
                 os.remove(self.cookies_path)
         except OSError as e:
             logger.warning(f"删除 Cookie 文件失败: {e}")
-        logger.info("“站登录状态已清除")
+        logger.info("B站登录状态已清除")

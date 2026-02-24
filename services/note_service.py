@@ -52,7 +52,7 @@ class NoteService:
         try:
             # 1. 下载音频
             logger.info(f"开始下载音频: {video_url}")
-            audio_meta = await asyncio.get_event_loop().run_in_executor(
+            audio_meta = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: self.downloader.download(video_url, quality=quality)
             )

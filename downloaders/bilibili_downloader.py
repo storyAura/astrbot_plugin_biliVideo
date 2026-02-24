@@ -12,9 +12,9 @@ from ..models.transcriber_model import TranscriptResult, TranscriptSegment
 
 
 class BilibiliDownloader(Downloader):
-    def __init__(self, data_dir: Optional[str] = None, cookies: Optional[dict] = None):
+    def __init__(self, data_dir: str, cookies: Optional[dict] = None):
         super().__init__()
-        self.data_dir = data_dir or os.path.join(os.getcwd(), "data", "bilinote")
+        self.data_dir = data_dir
         os.makedirs(self.data_dir, exist_ok=True)
 
         # 从 cookie dict 生成 yt-dlp 可用的 cookies.txt (Netscape 格式)

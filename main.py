@@ -9,7 +9,7 @@ import os
 import uuid
 
 from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star
+from astrbot.api.star import Context, Star, StarTools
 from astrbot.api.message_components import Plain, Image
 from astrbot.api import logger
 
@@ -27,9 +27,10 @@ class BiliVideoPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
 
-        # 数据目录
-        self.data_dir = os.path.join("data", "astrbot_plugin_bilivideo")
+        # 数据目录（使用框架规范 API）
+        self.data_dir = str(StarTools.get_data_dir("astrbot_plugin_bilivideo"))
         os.makedirs(self.data_dir, exist_ok=True)
+        os.makedirs(os.path.join(self.data_dir, "images"), exist_ok=True)
 
         # 读取配置
         self.config = self.context.get_config() or {}

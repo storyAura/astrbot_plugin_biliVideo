@@ -42,7 +42,7 @@ async def get_up_info(mid: str, cookies: Optional[dict] = None) -> Optional[Dict
     headers = _build_headers(cookies)
 
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
             async with session.get(url, params=signed_params, headers=headers) as resp:
                 if resp.status != 200:
                     logger.warning(f"获取UP主信息失败, HTTP {resp.status}")
@@ -53,7 +53,7 @@ async def get_up_info(mid: str, cookies: Optional[dict] = None) -> Optional[Dict
                     logger.warning(f"获取UP主信息失败: code={data.get('code')}, msg={data.get('message')}")
                     return None
 
-                info = data.get("data", {})
+                info = data.get("data") or {}
                 return {
                     "mid": str(info.get("mid", mid)),
                     "name": info.get("name", "未知"),
@@ -86,7 +86,7 @@ async def get_latest_videos(mid: str, count: int = 5, cookies: Optional[dict] = 
     headers = _build_headers(cookies)
 
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
             async with session.get(url, params=signed_params, headers=headers) as resp:
                 if resp.status != 200:
                     logger.warning(f"获取UP主视频列表失败, HTTP {resp.status}")
@@ -97,7 +97,8 @@ async def get_latest_videos(mid: str, count: int = 5, cookies: Optional[dict] = 
                     logger.warning(f"获取UP主视频列表失败: code={data.get('code')}, msg={data.get('message')}")
                     return []
 
-                vlist = data.get("data", {}).get("list", {}).get("vlist", [])
+                vlist = (data.get("data") or {}).get("list") or {}
+                vlist = vlist.get("vlist") or []
                 result = []
                 for v in vlist[:count]:
                     result.append({
