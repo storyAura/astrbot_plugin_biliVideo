@@ -5,11 +5,81 @@
     "default": false,
     "hint": "开启后将输出详细的 Debug 级别日志，方便排查问题。正常使用时请关闭"
   },
-  "output_image": {
-    "description": "总结以图片形式发送",
+  "llm_provider": {
+    "description": "LLM 提供者",
+    "type": "string",
+    "default": "astrbot",
+    "options": [
+      "astrbot",
+      "openai_compatible"
+    ],
+    "hint": "astrbot(使用AstrBot内置LLM) / openai_compatible(使用自定义OpenAI兼容API)"
+  },
+  "llm_api_base": {
+    "description": "OpenAI兼容API地址",
+    "type": "string",
+    "default": "",
+    "hint": "当llm_provider为openai_compatible时填写，例如 https://api.openai.com/v1 或其他兼容API地址"
+  },
+  "llm_api_key": {
+    "description": "OpenAI兼容API密钥",
+    "type": "string",
+    "default": "",
+    "hint": "当llm_provider为openai_compatible时填写API Key"
+  },
+  "llm_model": {
+    "description": "OpenAI兼容API模型名称",
+    "type": "string",
+    "default": "gpt-4o-mini",
+    "hint": "当llm_provider为openai_compatible时填写模型名，如 gpt-4o-mini, deepseek-chat 等"
+  },
+  "enable_miniapp_detect": {
+    "description": "启用B站链接自动识别",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后，机器人会自动识别群内分享的B站视频链接（包括小程序、卡片、短链等），推送封面和视频信息"
+  },
+  "detect_show_cover": {
+    "description": "识别推送：显示封面图",
     "type": "bool",
     "default": true,
-    "hint": "开启后总结将渲染为精美图片发送（需要安装 wkhtmltopdf），关闭则发送纯文本"
+    "hint": "识别到B站链接时，是否在推送中包含视频封面图片"
+  },
+  "detect_show_uploader": {
+    "description": "识别推送：显示UP主名",
+    "type": "bool",
+    "default": true,
+    "hint": "识别到B站链接时，是否显示UP主名称"
+  },
+  "detect_show_desc": {
+    "description": "识别推送：显示简介",
+    "type": "bool",
+    "default": true,
+    "hint": "识别到B站链接时，是否显示视频简介（超100字自动截断）"
+  },
+  "detect_show_pubtime": {
+    "description": "识别推送：显示发布时间",
+    "type": "bool",
+    "default": true,
+    "hint": "识别到B站链接时，是否显示视频发布时间"
+  },
+  "detect_show_link": {
+    "description": "识别推送：显示BV号链接",
+    "type": "bool",
+    "default": true,
+    "hint": "识别到B站链接时，是否显示完整视频链接"
+  },
+  "detect_show_stats": {
+    "description": "识别推送：显示播放数据",
+    "type": "bool",
+    "default": true,
+    "hint": "识别到B站链接时，是否显示播放量、弹幕、点赞等数据"
+  },
+  "detect_auto_summary": {
+    "description": "识别推送：自动生成总结",
+    "type": "bool",
+    "default": false,
+    "hint": "识别到B站链接时，是否自动生成视频总结（注意：会消耗LLM额度）"
   },
   "access_mode": {
     "description": "群聊访问控制模式",
@@ -26,6 +96,12 @@
     "type": "string",
     "default": "",
     "hint": "黑名单/白名单的群号列表，用英文逗号分隔，如 123456,789012"
+  },
+  "output_image": {
+    "description": "总结以图片形式发送",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后总结将渲染为精美图片发送（需要安装 wkhtmltopdf），关闭则发送纯文本"
   },
   "check_interval_minutes": {
     "description": "定时检查新视频间隔 (分钟)",

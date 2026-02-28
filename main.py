@@ -5,16 +5,18 @@ BiliVideo 视频总结插件
 """
 
 import asyncio
+import json
 import os
+import re
 import uuid
 
-from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.api.event import filter, AstrMessageEvent, MessageChain
 from astrbot.api.star import Context, Star, StarTools
 from astrbot.api.message_components import Plain, Image
 from astrbot.api import logger
 
 from .services.subscription import SubscriptionManager
-from .services.bilibili_api import get_up_info, get_latest_videos, search_up_by_name
+from .services.bilibili_api import get_up_info, get_latest_videos, search_up_by_name, get_video_info, resolve_short_url
 from .services.bilibili_login import BilibiliLogin
 from .services.note_service import NoteService
 from .utils.url_parser import detect_platform, extract_bilibili_mid
@@ -24,7 +26,7 @@ from .utils.md_to_image import render_note_image
 class BiliVideoPlugin(Star):
     """BiliVideo 视频总结插件"""
 
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: dict):
         super().__init__(context)
 
         # 数据目录（使用框架规范 API）
@@ -32,8 +34,8 @@ class BiliVideoPlugin(Star):
         os.makedirs(self.data_dir, exist_ok=True)
         os.makedirs(os.path.join(self.data_dir, "images"), exist_ok=True)
 
-        # 读取配置
-        self.config = self.context.get_config() or {}
+        # 读取配置（由 AstrBot 直接传入）
+        self.config = config
 
         # Debug 模式 —— 在其他所有初始化之前设置
         self._debug_mode = bool(self.config.get("debug_mode", False))
@@ -76,6 +78,18 @@ class BiliVideoPlugin(Star):
             self._log("定时检查任务已启动")
         else:
             self._log("定时推送已禁用")
+
+        # LLM Provider 配置
+        self.llm_provider = self.config.get("llm_provider", "astrbot")
+        self.llm_api_base = str(self.config.get("llm_api_base", "")).rstrip("/")
+        self.llm_api_key = str(self.config.get("llm_api_key", ""))
+        self.llm_model = str(self.config.get("llm_model", "gpt-4o-mini"))
+        self._log(f"LLM Provider: {self.llm_provider}")
+
+        # B站链接自动识别
+        self.enable_miniapp_detect = bool(self.config.get("enable_miniapp_detect", False))
+        self._log(f"B站链接自动识别: {'启用' if self.enable_miniapp_detect else '禁用'}")
+        self._log("提示: 可用 /识别开关 命令实时切换")
 
         self._log("══════ [BiliVideo] 插件初始化完成 ══════")
 
@@ -185,6 +199,325 @@ class BiliVideoPlugin(Star):
         else:
             self._log("[Render] 图片渲染失败, 回退到纯文本")
             return note_text
+
+    # ==================== B站链接自动识别 ====================
+
+    @filter.command("识别开关", alias={"detect_toggle", "切换识别"})
+    async def toggle_detect_cmd(self, event: AstrMessageEvent):
+        """实时切换B站链接自动识别开关"""
+        self.enable_miniapp_detect = not self.enable_miniapp_detect
+        # 同步到 config 字典（重载插件时保持一致）
+        self.config["enable_miniapp_detect"] = self.enable_miniapp_detect
+        try:
+            if hasattr(self.config, 'save_config'):
+                self.config.save_config()
+        except Exception:
+            pass
+        status = "✅ 已开启" if self.enable_miniapp_detect else "❌ 已关闭"
+        yield event.plain_result(f"B站链接自动识别: {status}")
+
+    @filter.event_message_type(filter.EventMessageType.ALL)
+    async def on_all_message(self, event: AstrMessageEvent):
+        """自动识别消息中的B站视频链接并推送视频信息"""
+        if not self.enable_miniapp_detect:
+            return
+
+        # 跳过命令消息
+        raw_msg = event.message_str or ""
+        if raw_msg.strip().startswith("/"):
+            return
+
+        # 访问控制
+        if not self._check_access(event):
+            return
+
+        bili_url = ""
+        bvid = None
+
+        # ---- 1. 尝试从 raw_message 提取 QQ 小程序 / JSON 卡片 ----
+        try:
+            if hasattr(event, 'message_obj') and event.message_obj:
+                raw = getattr(event.message_obj, 'raw_message', None)
+                logger.info(f"[AutoDetect] raw_message type={type(raw).__name__}, truthy={bool(raw)}")
+                if raw:
+                    bili_url = self._extract_bili_url_from_raw(raw)
+
+                # 遍历消息组件的 raw / data 属性
+                if not bili_url and event.message_obj.message:
+                    for comp in event.message_obj.message:
+                        comp_raw = getattr(comp, 'raw', None) or getattr(comp, 'data', None)
+                        if comp_raw:
+                            bili_url = self._extract_bili_url_from_raw(comp_raw)
+                            if bili_url:
+                                break
+
+                # 兜底：尝试将每个组件转为字符串后解析 JSON
+                if not bili_url and event.message_obj.message:
+                    for comp in event.message_obj.message:
+                        comp_str = str(comp)
+                        if 'bilibili' in comp_str.lower() or 'b23.tv' in comp_str.lower():
+                            logger.info(f"[AutoDetect] 尝试 str(comp) 解析, len={len(comp_str)}")
+                            # 尝试直接 JSON 解析
+                            bili_url = self._try_parse_json_for_url(comp_str)
+                            if bili_url:
+                                break
+                            # 尝试从字符串中直接用正则匹配 URL
+                            url_match = re.search(r'https?://[^\s\"\'\}\]]+bilibili\.com/video/(BV[0-9A-Za-z]{10})', comp_str)
+                            if url_match:
+                                bvid = url_match.group(1)
+                                logger.info(f"[AutoDetect] 从 str(comp) 正则匹配到 BV: {bvid}")
+                                break
+                            url_match = re.search(r'https?://b23\.tv/\S+', comp_str)
+                            if url_match:
+                                bili_url = url_match.group(0).rstrip('"}\']')
+                                logger.info(f"[AutoDetect] 从 str(comp) 匹配到短链: {bili_url}")
+                                break
+                            # qqdocurl 可能直接在字符串中
+                            qqdoc_match = re.search(r'"qqdocurl"\s*:\s*"(https?://[^"]+)"', comp_str)
+                            if qqdoc_match:
+                                bili_url = qqdoc_match.group(1)
+                                logger.info(f"[AutoDetect] 从 str(comp) 匹配到 qqdocurl: {bili_url}")
+                                break
+        except Exception as e:
+            logger.error(f"[AutoDetect] 解析消息异常: {e}", exc_info=True)
+
+        # ---- 2. message_str 可能本身就是 JSON ----
+        if not bili_url and not bvid and raw_msg.strip().startswith("{"):
+            bili_url = self._try_parse_json_for_url(raw_msg.strip())
+
+        logger.info(f"[AutoDetect] 提取结果: bili_url={bili_url!r}, bvid={bvid}")
+
+        # ---- 3. 如果从 JSON 拿到了 URL，提取 BV 号 ----
+        if bili_url:
+            self._log(f"[AutoDetect] 从 JSON 卡片提取到 URL: {bili_url}")
+            bv_match = re.search(r'(BV[0-9A-Za-z]{10})', bili_url)
+            if bv_match:
+                bvid = bv_match.group(1)
+            elif 'b23.tv' in bili_url or 'bili' in bili_url:
+                resolved = await resolve_short_url(bili_url)
+                if resolved:
+                    self._log(f"[AutoDetect] 短链解析结果: {resolved}")
+                    bv_match = re.search(r'(BV[0-9A-Za-z]{10})', resolved)
+                    if bv_match:
+                        bvid = bv_match.group(1)
+
+        # ---- 4. 从纯文本中提取 ----
+        if not bvid:
+            all_text = raw_msg
+            try:
+                if hasattr(event, 'message_obj') and event.message_obj:
+                    parts = []
+                    for comp in (event.message_obj.message or []):
+                        if hasattr(comp, 'text'):
+                            parts.append(comp.text)
+                        elif isinstance(comp, str):
+                            parts.append(comp)
+                    if parts:
+                        all_text = " ".join(parts)
+            except Exception:
+                pass
+
+            # BV 号
+            bv_match = re.search(r'(BV[0-9A-Za-z]{10})', all_text)
+            if bv_match:
+                bvid = bv_match.group(1)
+
+            # bilibili.com 长链
+            if not bvid:
+                url_match = re.search(r'https?://(?:www\.)?bilibili\.com/video/(BV[0-9A-Za-z]{10})', all_text)
+                if url_match:
+                    bvid = url_match.group(1)
+
+            # b23.tv 短链 (异步解析)
+            if not bvid:
+                short_match = re.search(r'https?://b23\.tv/\S+', all_text)
+                if short_match:
+                    resolved = await resolve_short_url(short_match.group(0))
+                    if resolved:
+                        bv_match = re.search(r'(BV[0-9A-Za-z]{10})', resolved)
+                        if bv_match:
+                            bvid = bv_match.group(1)
+
+        if not bvid:
+            return  # 没有检测到B站链接，静默放过
+
+        self._log(f"[AutoDetect] 检测到 BV 号: {bvid}")
+
+        # 获取视频信息并推送
+        try:
+            info = await get_video_info(bvid, cookies=self.bili_cookies)
+            if not info:
+                self._log(f"[AutoDetect] 获取视频信息失败: {bvid}")
+                return
+
+            def fmt_num(n):
+                if n >= 10000:
+                    return f"{n / 10000:.1f}万"
+                return str(n)
+
+            # 按配置构造文本（每次从 config 动态读取）
+            video_url = f"https://www.bilibili.com/video/{bvid}"
+            lines = []
+            lines.append(f"📺 {info['title']}")
+
+            if self.config.get("detect_show_uploader", True):
+                lines.append(f"👤 UP主: {info['owner_name']}")
+
+            if self.config.get("detect_show_desc", True) and info.get('desc'):
+                desc = info['desc']
+                if len(desc) > 100:
+                    desc = desc[:100] + "..."
+                lines.append(f"📝 简介: {desc}")
+
+            if self.config.get("detect_show_pubtime", True) and info.get('pubdate'):
+                import time as _time
+                try:
+                    pub_str = _time.strftime('%Y-%m-%d %H:%M', _time.localtime(info['pubdate']))
+                    lines.append(f"📅 发布: {pub_str}")
+                except Exception:
+                    pass
+
+            if self.config.get("detect_show_stats", True):
+                lines.append(
+                    f"▶️ {fmt_num(info['view'])}播放  "
+                    f"💬 {fmt_num(info['danmaku'])}弹幕  "
+                    f"👍 {fmt_num(info['like'])}点赞"
+                )
+
+            if self.config.get("detect_show_link", True):
+                lines.append(f"🔗 {video_url}")
+
+            text = "\n".join(lines)
+
+            # 构建消息链
+            chain = []
+            if self.config.get("detect_show_cover", True):
+                pic_url = info.get("pic", "")
+                if pic_url:
+                    if pic_url.startswith("//"):
+                        pic_url = "https:" + pic_url
+                    chain.append(Image.fromURL(pic_url))
+            chain.append(Plain(text))
+
+            yield event.chain_result(chain)
+
+            # 自动总结
+            if self.config.get("detect_auto_summary", False):
+                self._log(f"[AutoDetect] 开始自动总结: {video_url}")
+                yield event.plain_result("⏳ 正在生成视频总结...")
+                try:
+                    note = await self._generate_note(video_url)
+                    result = self._render_and_get_chain(note)
+                    if isinstance(result, list):
+                        yield event.chain_result(result)
+                    else:
+                        yield event.plain_result(result)
+                except Exception as se:
+                    self._log(f"[AutoDetect] 自动总结失败: {se}")
+                    yield event.plain_result(f"❌ 自动总结失败: {se}")
+
+        except Exception as e:
+            self._log(f"[AutoDetect] 处理异常: {e}")
+            logger.error(f"B站链接自动识别处理异常: {e}", exc_info=True)
+
+    # ---- 小程序 URL 提取辅助方法 ----
+
+    def _extract_bili_url_from_raw(self, raw) -> str:
+        """从 raw_message 中提取 B站 URL，支持 dict/list/str 格式"""
+        if raw is None:
+            return ""
+
+        # raw 是 dict（已解析的 JSON 或 OneBot 消息段）
+        if isinstance(raw, dict):
+            url = self._find_bili_qqdocurl(raw)
+            if url:
+                return url
+            # OneBot 消息段: {"type":"json","data":{"data":"{...}"}}
+            if raw.get("type") == "json":
+                inner = raw.get("data", {})
+                if isinstance(inner, dict):
+                    json_str = inner.get("data", "")
+                    if isinstance(json_str, str):
+                        return self._try_parse_json_for_url(json_str)
+                elif isinstance(inner, str):
+                    return self._try_parse_json_for_url(inner)
+
+        # raw 是 list（OneBot 消息段列表）
+        if isinstance(raw, list):
+            for seg in raw:
+                if not isinstance(seg, dict):
+                    continue
+                if seg.get("type") == "json":
+                    inner = seg.get("data", {})
+                    if isinstance(inner, dict):
+                        json_str = inner.get("data", "")
+                        if isinstance(json_str, str):
+                            url = self._try_parse_json_for_url(json_str)
+                            if url:
+                                return url
+                    elif isinstance(inner, str):
+                        url = self._try_parse_json_for_url(inner)
+                        if url:
+                            return url
+
+        # raw 是 str
+        if isinstance(raw, str):
+            raw_str = raw.strip()
+            # 纯 JSON 字符串
+            if raw_str.startswith("{"):
+                url = self._try_parse_json_for_url(raw_str)
+                if url:
+                    return url
+            # CQ 码: [CQ:json,data=...]
+            cq_match = re.search(r'\[CQ:json,data=(.*?)\]', raw_str, re.S)
+            if cq_match:
+                cq_data = cq_match.group(1)
+                cq_data = (
+                    cq_data
+                    .replace("&amp;", "&")
+                    .replace("&#44;", ",")
+                    .replace("&#91;", "[")
+                    .replace("&#93;", "]")
+                )
+                url = self._try_parse_json_for_url(cq_data)
+                if url:
+                    return url
+
+        return ""
+
+    def _try_parse_json_for_url(self, text: str) -> str:
+        """尝试从 JSON 字符串中提取 B站 URL"""
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict):
+                return self._find_bili_qqdocurl(data)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return ""
+
+    def _find_bili_qqdocurl(self, data: dict) -> str:
+        """从已解析的 JSON dict 中查找 B站相关的 URL"""
+        meta = data.get("meta")
+        if not isinstance(meta, dict):
+            return ""
+        for _key, val in meta.items():
+            if isinstance(val, dict):
+                url = val.get("qqdocurl", "") or val.get("jumpUrl", "") or val.get("url", "")
+                if url and self._is_bili_domain(url):
+                    return url
+        return ""
+
+    @staticmethod
+    def _is_bili_domain(url: str) -> bool:
+        """检查 URL 是否属于 B站 相关域名"""
+        import urllib.parse
+        try:
+            host = urllib.parse.urlparse(url).hostname or ""
+            host = host.lower().rstrip(".")
+            bili_domains = ("bilibili.com", "b23.tv", "bili2233.cn", "bili22.cn", "bili23.cn", "bili33.cn")
+            return any(host == d or host.endswith("." + d) for d in bili_domains)
+        except Exception:
+            return False
 
     # ==================== 命令处理 ====================
 
@@ -514,6 +847,7 @@ class BiliVideoPlugin(Star):
             yield event.plain_result("❌ 请提供UP主UID、空间链接或昵称\n用法: /订阅 <UP主UID或昵称>")
             return
 
+        search_result = None
         mid = extract_bilibili_mid(args)
         if not mid:
             # 尝试按名称搜索UP主
@@ -537,13 +871,33 @@ class BiliVideoPlugin(Star):
             yield event.plain_result(f"❌ 已达到最大订阅数 ({max_subs})")
             return
 
-        # 获取 UP主 信息
+        # 获取 UP主 信息（失败时多级回退）
         up_info = await get_up_info(mid, cookies=self.bili_cookies)
         if not up_info:
-            yield event.plain_result(f"❌ 无法获取UP主信息 (UID:{mid})，请检查UID是否正确")
-            return
+            if search_result and search_result.get("name"):
+                logger.warning(f"get_up_info 失败 (UID:{mid})，回退使用搜索结果名称")
+            else:
+                # 尝试从最新视频中获取UP主名称
+                logger.warning(f"get_up_info 失败 (UID:{mid})，尝试从视频获取UP主名称")
+                try:
+                    videos = await get_latest_videos(mid, count=1, cookies=self.bili_cookies)
+                    if videos and videos[0].get("bvid"):
+                        vi = await get_video_info(videos[0]["bvid"], cookies=self.bili_cookies)
+                        if vi and vi.get("owner_name"):
+                            search_result = {"mid": mid, "name": vi["owner_name"]}
+                            logger.info(f"从视频获取到UP主名称: {search_result['name']}")
+                        else:
+                            search_result = {"mid": mid, "name": f"UP主_{mid}"}
+                            logger.warning(f"无法获取UP主名称，使用 UID 兜底")
+                    else:
+                        # 最后的兜底：使用 UID 作为名称
+                        search_result = {"mid": mid, "name": f"UP主_{mid}"}
+                        logger.warning(f"无法获取UP主名称，使用 UID 兜底")
+                except Exception as e:
+                    search_result = {"mid": mid, "name": f"UP主_{mid}"}
+                    logger.warning(f"获取视频列表失败: {e}，使用 UID 兜底")
 
-        name = up_info["name"]
+        name = up_info["name"] if up_info else search_result["name"]
 
         # 添加订阅
         success = self.subscription_mgr.add_subscription(origin, mid, name)
@@ -819,11 +1173,17 @@ class BiliVideoPlugin(Star):
             return f"❌ 总结生成失败: {str(e)}"
 
     async def _ask_llm(self, prompt: str) -> str:
+        """根据配置调用 LLM（AstrBot 内置 或 OpenAI 兼容 API）"""
+        if self.llm_provider == "openai_compatible":
+            return await self._ask_llm_openai_compatible(prompt)
+        return await self._ask_llm_astrbot(prompt)
+
+    async def _ask_llm_astrbot(self, prompt: str) -> str:
         """调用 AstrBot 内置 LLM"""
         try:
-            self._log(f"[AskLLM] prompt 长度={len(prompt)}, 前100字: {prompt[:100]}...")
+            self._log(f"[AskLLM/AstrBot] prompt 长度={len(prompt)}, 前100字: {prompt[:100]}...")
             provider = self.context.get_using_provider()
-            self._log(f"[AskLLM] provider={type(provider).__name__ if provider else 'None'}")
+            self._log(f"[AskLLM/AstrBot] provider={type(provider).__name__ if provider else 'None'}")
             if not provider:
                 return "❌ 未配置 LLM Provider，请在 AstrBot 设置中配置"
 
@@ -831,21 +1191,56 @@ class BiliVideoPlugin(Star):
                 prompt=prompt,
                 session_id="BiliVideo_plugin",
             )
-            self._log(f"[AskLLM] response type={type(response).__name__}")
+            self._log(f"[AskLLM/AstrBot] response type={type(response).__name__}")
 
             if hasattr(response, 'completion_text'):
                 result = response.completion_text
-                self._log(f"[AskLLM] 使用 completion_text, 长度={len(result) if result else 0}")
+                self._log(f"[AskLLM/AstrBot] 使用 completion_text, 长度={len(result) if result else 0}")
                 return result
             elif isinstance(response, str):
-                self._log(f"[AskLLM] response 是 str, 长度={len(response)}")
+                self._log(f"[AskLLM/AstrBot] response 是 str, 长度={len(response)}")
                 return response
             else:
-                self._log(f"[AskLLM] response 转 str")
+                self._log(f"[AskLLM/AstrBot] response 转 str")
                 return str(response)
 
         except Exception as e:
-            logger.error(f"LLM 调用失败: {e}", exc_info=True)
+            logger.error(f"LLM 调用失败 (AstrBot): {e}", exc_info=True)
+            return f"❌ LLM 调用失败: {str(e)}"
+
+    async def _ask_llm_openai_compatible(self, prompt: str) -> str:
+        """调用 OpenAI 兼容 API"""
+        try:
+            if not self.llm_api_base or not self.llm_api_key:
+                return "❌ 请先配置 llm_api_base 和 llm_api_key"
+
+            self._log(f"[AskLLM/OpenAI] prompt 长度={len(prompt)}, model={self.llm_model}")
+            url = f"{self.llm_api_base}/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.llm_api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": self.llm_model,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+
+            import aiohttp as _aiohttp
+            timeout = _aiohttp.ClientTimeout(total=120)
+            async with _aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, json=payload, headers=headers) as resp:
+                    if resp.status != 200:
+                        body = await resp.text()
+                        logger.error(f"OpenAI 兼容 API 返回 HTTP {resp.status}: {body[:500]}")
+                        return f"❌ LLM API 返回错误 (HTTP {resp.status})"
+
+                    data = await resp.json()
+                    content = data["choices"][0]["message"]["content"]
+                    self._log(f"[AskLLM/OpenAI] 响应长度={len(content)}")
+                    return content
+
+        except Exception as e:
+            logger.error(f"LLM 调用失败 (OpenAI Compatible): {e}", exc_info=True)
             return f"❌ LLM 调用失败: {str(e)}"
 
     # ==================== 定时任务 ====================
@@ -912,9 +1307,9 @@ class BiliVideoPlugin(Star):
         push_header = f"🔔 UP主【{up['name']}】发布了新视频!\n"
         result = self._render_and_get_chain(note)
         if isinstance(result, list):
-            chain = [Plain(push_header)] + result
+            chain_components = [Plain(push_header)] + result
         else:
-            chain = [Plain(push_header + "━━━━━━━━━━━━━━━━━━━\n\n" + result)]
+            chain_components = [Plain(push_header + "━━━━━━━━━━━━━━━━━━━\n\n" + result)]
 
         # 获取推送目标：优先使用配置的推送目标，否则推到订阅来源
         push_origins = self.subscription_mgr.get_push_origins()
@@ -923,7 +1318,8 @@ class BiliVideoPlugin(Star):
 
         for target in push_origins:
             try:
-                await self.context.send_message(target, chain)
+                mc = MessageChain(chain=chain_components)
+                await self.context.send_message(target, mc)
                 logger.info(f"已推送新视频总结给 {target}")
             except Exception as e:
                 logger.error(f"推送消息到 {target} 失败: {e}")

@@ -5,7 +5,7 @@
 
   <br/>
 
-  <img src="https://img.shields.io/badge/version-v1.0.0-blue" />
+  <img src="https://img.shields.io/badge/version-v1.0.2-blue" />
   <img src="https://img.shields.io/badge/AstrBot-v4.0+-green" />
   <img src="https://img.shields.io/badge/platform-Bilibili-ff69b4" />
   <img src="https://img.shields.io/badge/license-MIT-orange" />
@@ -38,6 +38,7 @@
 | ⏱️ **时间戳标记** | 总结中标注视频对应时间点，便于跳转定位 |
 | 🔐 **扫码登录** | 在聊天中扫码登录B站，无需手动填写 Cookie |
 | 🛡️ **群聊权限控制** | 支持黑名单 / 白名单模式 |
+| 📱 **小程序链接识别** | 群里分享B站小程序/短链自动推送视频信息 |
 
 ## 📦 安装
 
@@ -101,6 +102,12 @@ apt install -y wkhtmltopdf
 | `/订阅列表` | 查看当前订阅 |
 | `/检查更新` | 手动检查 UP 主新视频 |
 
+### 自动识别
+
+| 命令 | 说明 |
+|------|------|
+| `/识别开关` | 开关B站链接自动识别（群里分享链接自动推送视频信息） |
+
 > **💡 提示**：`<UP主>` 支持多种格式 —— 纯数字 UID、空间链接、或者直接输入 UP 主昵称。
 
 ### 推送目标
@@ -146,6 +153,14 @@ apt install -y wkhtmltopdf
 | `push_users` | 空 | 推送QQ号列表，逗号分隔 |
 | `access_mode` | `blacklist` | 群聊访问控制模式 |
 | `group_list` | 空 | 群号列表，逗号分隔 |
+| `enable_miniapp_detect` | `false` | 自动识别群内B站链接并推送视频信息 |
+| `detect_show_cover` | `true` | 推送时显示视频封面 |
+| `detect_show_uploader` | `true` | 推送时显示UP主名 |
+| `detect_show_desc` | `true` | 推送时显示视频简介 |
+| `detect_show_pubtime` | `true` | 推送时显示发布时间 |
+| `detect_show_link` | `true` | 推送时显示BV号链接 |
+| `detect_show_stats` | `true` | 推送时显示播放量等数据 |
+| `detect_auto_summary` | `false` | 识别链接后自动生成总结（消耗LLM额度） |
 | `debug_mode` | `false` | 启用调试日志 |
 
 ## 📋 系统依赖
@@ -196,6 +211,7 @@ You can also **subscribe to content creators** and receive automatic summary pus
 | ⏱️ **Timestamps** | Key moments marked with video timestamps for quick navigation |
 | 🔐 **QR Login** | Login to Bilibili by scanning a QR code in chat |
 | 🛡️ **Access Control** | Blacklist / whitelist modes |
+| 📱 **Mini-App Detection** | Auto-detect Bilibili links shared in chat and push video info |
 
 ## 📦 Installation
 
@@ -250,6 +266,7 @@ Scan the QR code with the Bilibili mobile app.
 | `/添加推送号 <QQ ID>` | Add a QQ user as push target |
 | `/推送列表` | View push targets |
 | `/移除推送 <ID>` | Remove a push target |
+| `/识别开关` | Toggle auto-detect for Bilibili links |
 
 > **💡 Tip**: `<creator>` accepts numeric UID, space link URL, or creator nickname.
 > When push targets are configured, summaries are sent **only** to those targets.
@@ -267,6 +284,14 @@ Scan the QR code with the Bilibili mobile app.
 | `push_groups` | empty | Push target QQ groups, comma-separated |
 | `push_users` | empty | Push target QQ users, comma-separated |
 | `access_mode` | `blacklist` | Group access control mode |
+| `enable_miniapp_detect` | `false` | Auto-detect Bilibili links in chat |
+| `detect_show_cover` | `true` | Show video cover in push |
+| `detect_show_uploader` | `true` | Show uploader name in push |
+| `detect_show_desc` | `true` | Show video description in push |
+| `detect_show_pubtime` | `true` | Show publish time in push |
+| `detect_show_link` | `true` | Show BV link in push |
+| `detect_show_stats` | `true` | Show view/danmaku/like counts |
+| `detect_auto_summary` | `false` | Auto-generate summary on link detect |
 | `debug_mode` | `false` | Enable debug logging |
 
 ## ⚠️ Notes

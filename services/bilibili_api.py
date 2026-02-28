@@ -221,3 +221,61 @@ async def _search_up_fallback(keyword: str, cookies: Optional[dict] = None) -> O
         logger.error(f"搜索UP主(fallback)异常: {e}")
         return None
 
+
+async def get_video_info(bvid: str, cookies: Optional[dict] = None) -> Optional[Dict]:
+    """
+    获取视频详情信息
+
+    :param bvid: 视频 BV 号
+    :param cookies: B站 cookie dict
+    :return: {"bvid", "title", "pic", "owner_name", "owner_mid", "view", "danmaku", "like", "desc"} 或 None
+    """
+    url = "https://api.bilibili.com/x/web-interface/view"
+    params = {"bvid": bvid}
+    headers = _build_headers(cookies)
+
+    try:
+        async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
+            async with session.get(url, params=params, headers=headers) as resp:
+                if resp.status != 200:
+                    logger.warning(f"获取视频信息失败, HTTP {resp.status}")
+                    return None
+
+                data = await resp.json()
+                if data.get("code") != 0:
+                    logger.warning(f"获取视频信息失败: code={data.get('code')}, msg={data.get('message')}")
+                    return None
+
+                d = data.get("data") or {}
+                owner = d.get("owner") or {}
+                stat = d.get("stat") or {}
+                return {
+                    "bvid": d.get("bvid", bvid),
+                    "title": d.get("title", ""),
+                    "pic": d.get("pic", ""),
+                    "desc": d.get("desc", ""),
+                    "pubdate": d.get("pubdate", 0),
+                    "owner_name": owner.get("name", "未知"),
+                    "owner_mid": str(owner.get("mid", "")),
+                    "view": stat.get("view", 0),
+                    "danmaku": stat.get("danmaku", 0),
+                    "like": stat.get("like", 0),
+                }
+    except Exception as e:
+        logger.error(f"获取视频信息异常: {e}")
+        return None
+
+
+async def resolve_short_url(short_url: str) -> Optional[str]:
+    """
+    异步解析短链接（如 b23.tv），返回跳转后的最终 URL
+    """
+    try:
+        async with aiohttp.ClientSession(timeout=REQUEST_TIMEOUT) as session:
+            async with session.get(short_url, allow_redirects=True, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }) as resp:
+                return str(resp.url)
+    except Exception as e:
+        logger.warning(f"解析短链接失败: {e}")
+        return None
