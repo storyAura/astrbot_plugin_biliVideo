@@ -187,6 +187,12 @@
     "default": false,
     "hint": "是否启用定时检查和自动推送新视频总结"
   },
+  "auto_push_summary": {
+    "description": "自动推送：推送视频总结",
+    "type": "bool",
+    "default": true,
+    "hint": "启用后，定时检查触发的自动推送会进行总结；关闭后仅发送视频基本信息（标题、封面、简介、链接等）"
+  },
   "max_subscriptions": {
     "description": "最大订阅数",
     "type": "int",

@@ -2158,46 +2158,70 @@ class BiliVideoPlugin(Star):
         logger.info(f"UP主 {up['name']} 有新视频: {latest['title']}")
 
         video_url = f"https://www.bilibili.com/video/{latest_bvid}"
+        push_header = f"🔔 UP主【{up['name']}】发布了新视频!\n"
 
-        # 生成总结
-        note = await self._generate_note(video_url)
+        if not self.config.get("auto_push_summary", True):
+            # 仅推送视频基本信息，不进行转写和 LLM 总结
+            import time as _time
+            lines = [push_header + f"📺 {latest['title']}"]
+            if latest.get("description"):
+                desc = latest["description"]
+                if len(desc) > 100:
+                    desc = desc[:100] + "..."
+                lines.append(f"📝 简介: {desc}")
+            if latest.get("pubdate"):
+                try:
+                    pub_str = _time.strftime('%Y-%m-%d %H:%M', _time.localtime(latest["pubdate"]))
+                    lines.append(f"📅 发布: {pub_str}")
+                except Exception:
+                    pass
+            lines.append(f"🔗 {video_url}")
 
-        # 渲染总结
-        result = self._render_and_get_chain(note)
+            chain_components = []
+            pic_url = latest.get("pic", "")
+            if pic_url:
+                if pic_url.startswith("//"):
+                    pic_url = "https:" + pic_url
+                chain_components.append(Image.fromURL(pic_url))
+            chain_components.append(Plain("\n".join(lines)))
+        else:
+            # 生成总结
+            note = await self._generate_note(video_url)
 
-        # 合并转发模式
-        if self.config.get("enable_forward_message", False):
-            try:
-                video_info = await get_video_info(
-                    latest_bvid, cookies=self.bili_cookies
-                )
-            except Exception:
-                video_info = None
+            # 渲染总结
+            result = self._render_and_get_chain(note)
 
-            if video_info:
-                forward_nodes = self._build_forward_nodes(video_info, result)
-                push_header_node = Node(
-                    content=[Plain(f"🔔 UP主【{up['name']}】发布了新视频!")],
-                    name="BiliVideo 助手",
-                    uin="0",
-                )
-                # 在转发消息头部插入推送提醒
-                forward_nodes.nodes.insert(0, push_header_node)
-                chain_components = [forward_nodes]
+            # 合并转发模式
+            if self.config.get("enable_forward_message", False):
+                try:
+                    video_info = await get_video_info(
+                        latest_bvid, cookies=self.bili_cookies
+                    )
+                except Exception:
+                    video_info = None
+
+                if video_info:
+                    forward_nodes = self._build_forward_nodes(video_info, result)
+                    push_header_node = Node(
+                        content=[Plain(f"🔔 UP主【{up['name']}】发布了新视频!")],
+                        name="BiliVideo 助手",
+                        uin="0",
+                    )
+                    # 在转发消息头部插入推送提醒
+                    forward_nodes.nodes.insert(0, push_header_node)
+                    chain_components = [forward_nodes]
+                else:
+                    # 回退到普通模式
+                    if isinstance(result, list):
+                        chain_components = [Plain(push_header)] + result
+                    else:
+                        chain_components = [Plain(push_header + "━━━━━━━━━━━━━━━━━━━\n\n" + result)]
             else:
-                # 回退到普通模式
-                push_header = f"🔔 UP主【{up['name']}】发布了新视频!\n"
+                # 普通推送模式
                 if isinstance(result, list):
                     chain_components = [Plain(push_header)] + result
                 else:
                     chain_components = [Plain(push_header + "━━━━━━━━━━━━━━━━━━━\n\n" + result)]
-        else:
-            # 普通推送模式
-            push_header = f"🔔 UP主【{up['name']}】发布了新视频!\n"
-            if isinstance(result, list):
-                chain_components = [Plain(push_header)] + result
-            else:
-                chain_components = [Plain(push_header + "━━━━━━━━━━━━━━━━━━━\n\n" + result)]
 
         # 获取推送目标：优先使用配置的推送目标，否则推到订阅来源
         push_origins = self.subscription_mgr.get_push_origins()
