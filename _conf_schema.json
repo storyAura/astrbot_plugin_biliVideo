@@ -185,7 +185,7 @@
     "description": "启用自动推送",
     "type": "bool",
     "default": false,
-    "hint": "是否启用定时检查和自动推送新视频总结"
+    "hint": "是否启用定时检查和自动推送新视频信息"
   },
   "auto_push_summary": {
     "description": "自动推送：推送视频总结",
