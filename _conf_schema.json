@@ -1,252 +1,348 @@
 {
-  "debug_mode": {
-    "description": "启用调试日志",
-    "type": "bool",
-    "default": false,
-    "hint": "开启后将输出详细的 Debug 级别日志，方便排查问题。正常使用时请关闭"
+  "general": {
+    "description": "🔧 通用设置",
+    "type": "object",
+    "items": {
+      "debug_mode": {
+        "type": "bool",
+        "default": false,
+        "description": "调试模式",
+        "hint": "开启后输出 DEBUG 级别日志，正常使用请关闭"
+      },
+      "processing_timeout": {
+        "type": "int",
+        "default": 300,
+        "min": 60,
+        "max": 1800,
+        "description": "单次总结超时(秒)",
+        "hint": "下载 + 转写 + LLM 任意阶段超过此时长视为失败"
+      },
+      "user_cooldown_seconds": {
+        "type": "int",
+        "default": 8,
+        "min": 0,
+        "max": 600,
+        "description": "用户冷却(秒)",
+        "hint": "每个用户两次手动总结之间的最小间隔，设 0 关闭"
+      }
+    }
   },
-  "llm_provider": {
-    "description": "LLM 提供者",
-    "type": "string",
-    "default": "astrbot",
-    "options": [
-      "astrbot",
-      "openai_compatible"
-    ],
-    "hint": "astrbot(使用AstrBot内置LLM) / openai_compatible(使用自定义OpenAI兼容API)"
+  "llm": {
+    "description": "🤖 LLM 模型",
+    "type": "object",
+    "items": {
+      "llm_provider": {
+        "type": "string",
+        "default": "astrbot",
+        "options": ["astrbot", "openai_compatible"],
+        "description": "提供者",
+        "hint": "astrbot=AstrBot 内置 / openai_compatible=自定义 OpenAI 兼容 API"
+      },
+      "llm_provider_id": {
+        "type": "string",
+        "default": "",
+        "description": "指定内置模型 ID",
+        "hint": "仅 astrbot 模式生效。留空=用 AstrBot 当前模型；填 provider ID 可指定。用 /总结模型 查看可用 ID 并切换"
+      },
+      "llm_api_base": {
+        "type": "string",
+        "default": "",
+        "description": "API Base URL",
+        "hint": "例如 https://api.openai.com/v1 (仅在 openai_compatible 模式下生效)"
+      },
+      "llm_api_key": {
+        "type": "string",
+        "default": "",
+        "description": "API Key",
+        "hint": "OpenAI 兼容 API 的 Bearer Token"
+      },
+      "llm_model": {
+        "type": "string",
+        "default": "gpt-4o-mini",
+        "description": "模型名称",
+        "hint": "如 gpt-4o-mini / deepseek-chat / claude-3-5-sonnet"
+      },
+      "llm_temperature": {
+        "type": "float",
+        "default": 0.4,
+        "description": "Temperature",
+        "hint": "总结任务推荐 0.2 ~ 0.6"
+      }
+    }
   },
-  "llm_api_base": {
-    "description": "OpenAI兼容API地址",
-    "type": "string",
-    "default": "",
-    "hint": "当llm_provider为openai_compatible时填写，例如 https://api.openai.com/v1 或其他兼容API地址"
+  "summary": {
+    "description": "📝 总结生成",
+    "type": "object",
+    "items": {
+      "note_style": {
+        "type": "string",
+        "default": "professional",
+        "options": ["concise", "detailed", "professional"],
+        "description": "风格",
+        "hint": "concise=简洁要点 / detailed=完整记录 / professional=结构化分析"
+      },
+      "enable_link": {
+        "type": "bool",
+        "default": true,
+        "description": "插入时间戳",
+        "hint": "在总结中嵌入 [mm:ss] 跳转标记"
+      },
+      "enable_summary": {
+        "type": "bool",
+        "default": true,
+        "description": "末尾 AI 总结段落",
+        "hint": "在 Markdown 最后添加专业 AI 总结段落"
+      },
+      "max_note_length": {
+        "type": "int",
+        "default": 3000,
+        "min": 500,
+        "max": 12000,
+        "description": "最大字数",
+        "hint": "超出后智能截断到段落边界并附友好提示"
+      },
+      "prefer_subtitle": {
+        "type": "bool",
+        "default": true,
+        "description": "优先使用平台字幕",
+        "hint": "有字幕时跳过音频下载，可节省 30~60 秒/视频"
+      },
+      "subtitle_langs": {
+        "type": "string",
+        "default": "zh-Hans,zh,zh-CN,ai-zh,en,en-US",
+        "description": "字幕语言优先顺序",
+        "hint": "逗号分隔，按优先级排列。可加日语 ja、繁中 zh-Hant 等"
+      },
+      "download_quality": {
+        "type": "string",
+        "default": "fast",
+        "options": ["fast", "medium", "slow"],
+        "description": "音频质量",
+        "hint": "fast=32k / medium=64k / slow=128k"
+      }
+    }
   },
-  "llm_api_key": {
-    "description": "OpenAI兼容API密钥",
-    "type": "string",
-    "default": "",
-    "hint": "当llm_provider为openai_compatible时填写API Key"
+  "render": {
+    "description": "🎨 渲染输出",
+    "type": "object",
+    "items": {
+      "output_image": {
+        "type": "bool",
+        "default": true,
+        "description": "图片输出",
+        "hint": "开箱即用:内建中文字体 + Pillow,无需装 wkhtmltopdf;装了 wkhtmltopdf 则自动用更精美的渲染。关闭则回退纯文本"
+      },
+      "enable_auto_split": {
+        "type": "bool",
+        "default": true,
+        "description": "长视频分图",
+        "hint": "总结过长时自动按章节拆成多张图片"
+      },
+      "max_cards_per_image": {
+        "type": "int",
+        "default": 6,
+        "min": 2,
+        "max": 12,
+        "description": "每图最大卡片数",
+        "hint": "建议 5~8 平衡可读性与图片大小"
+      },
+      "image_width": {
+        "type": "int",
+        "default": 1400,
+        "min": 800,
+        "max": 2400,
+        "description": "图片宽度(像素)",
+        "hint": "推荐 1200~1600"
+      }
+    }
   },
-  "llm_model": {
-    "description": "OpenAI兼容API模型名称",
-    "type": "string",
-    "default": "gpt-4o-mini",
-    "hint": "当llm_provider为openai_compatible时填写模型名，如 gpt-4o-mini, deepseek-chat 等"
+  "message": {
+    "description": "💬 消息推送格式",
+    "type": "object",
+    "items": {
+      "enable_forward_message": {
+        "type": "bool",
+        "default": false,
+        "description": "合并转发模式",
+        "hint": "将视频信息+总结打包为聊天记录形式"
+      },
+      "forward_bot_name": {
+        "type": "string",
+        "default": "BiliVideo 助手",
+        "description": "合并转发显示名"
+      },
+      "forward_bot_uin": {
+        "type": "string",
+        "default": "0",
+        "description": "合并转发显示 QQ"
+      },
+      "platform_prefix": {
+        "type": "string",
+        "default": "aiocqhttp",
+        "description": "推送平台前缀",
+        "hint": "用于配置 push_groups/push_users 生成 unified_msg_origin，例如 aiocqhttp"
+      }
+    }
   },
-  "enable_miniapp_detect": {
-    "description": "启用B站链接自动识别",
-    "type": "bool",
-    "default": false,
-    "hint": "开启后，机器人会自动识别群内分享的B站视频链接（包括小程序、卡片、短链等），推送封面和视频信息"
+  "detect": {
+    "description": "🔍 自动识别",
+    "type": "object",
+    "items": {
+      "enable_miniapp_detect": {
+        "type": "bool",
+        "default": false,
+        "description": "启用自动识别",
+        "hint": "可用 /识别开关 命令实时切换。识别群内分享的 B 站小程序/链接/短链"
+      },
+      "detect_show_cover": {
+        "type": "bool",
+        "default": true,
+        "description": "推送封面"
+      },
+      "detect_show_uploader": {
+        "type": "bool",
+        "default": true,
+        "description": "推送 UP 主"
+      },
+      "detect_show_desc": {
+        "type": "bool",
+        "default": true,
+        "description": "推送简介"
+      },
+      "detect_show_pubtime": {
+        "type": "bool",
+        "default": true,
+        "description": "推送发布时间"
+      },
+      "detect_show_link": {
+        "type": "bool",
+        "default": true,
+        "description": "推送链接"
+      },
+      "detect_show_stats": {
+        "type": "bool",
+        "default": true,
+        "description": "推送播放数据"
+      },
+      "detect_auto_summary": {
+        "type": "bool",
+        "default": false,
+        "description": "自动总结",
+        "hint": "开启会消耗 LLM 额度"
+      },
+      "trigger_keywords": {
+        "type": "string",
+        "default": "总结,看看,看一下,看下,分析,讲的啥,讲什么,说的啥,说什么,内容,视频,这个,这视频,帮我看,帮忙看,解析,翻译,summary,summarize,analyze,video,watch,check,see",
+        "description": "引用消息触发关键词",
+        "hint": "逗号分隔。引用消息只有命中关键词才会触发自动识别"
+      }
+    }
   },
-  "detect_show_cover": {
-    "description": "识别推送：显示封面图",
-    "type": "bool",
-    "default": true,
-    "hint": "识别到B站链接时，是否在推送中包含视频封面图片"
+  "subscription": {
+    "description": "📡 订阅推送",
+    "type": "object",
+    "items": {
+      "enable_auto_push": {
+        "type": "bool",
+        "default": false,
+        "description": "启用定时推送",
+        "hint": "开启后周期性检查订阅 UP 主新视频"
+      },
+      "auto_push_summary": {
+        "type": "bool",
+        "default": true,
+        "description": "推送时附带 AI 总结",
+        "hint": "关闭后仅推送视频基本信息(节省 LLM 额度)"
+      },
+      "check_interval_minutes": {
+        "type": "int",
+        "default": 600,
+        "min": 5,
+        "max": 1440,
+        "description": "检查间隔(分钟)"
+      },
+      "max_subscriptions": {
+        "type": "int",
+        "default": 20,
+        "min": 1,
+        "max": 100,
+        "description": "每会话最大订阅数"
+      },
+      "push_groups": {
+        "type": "string",
+        "default": "",
+        "description": "推送 QQ 群列表",
+        "hint": "逗号分隔群号(留空表示推到订阅来源)"
+      },
+      "push_users": {
+        "type": "string",
+        "default": "",
+        "description": "推送 QQ 号列表",
+        "hint": "逗号分隔 QQ 号(留空不推送私聊)"
+      }
+    }
   },
-  "detect_show_uploader": {
-    "description": "识别推送：显示UP主名",
-    "type": "bool",
-    "default": true,
-    "hint": "识别到B站链接时，是否显示UP主名称"
+  "access": {
+    "description": "🔐 访问控制",
+    "type": "object",
+    "items": {
+      "access_mode": {
+        "type": "string",
+        "default": "blacklist",
+        "options": ["blacklist", "whitelist"],
+        "description": "模式",
+        "hint": "blacklist=列表内禁用 / whitelist=仅列表内可用"
+      },
+      "group_list": {
+        "type": "string",
+        "default": "",
+        "description": "群号列表",
+        "hint": "逗号分隔群号"
+      }
+    }
   },
-  "detect_show_desc": {
-    "description": "识别推送：显示简介",
-    "type": "bool",
-    "default": true,
-    "hint": "识别到B站链接时，是否显示视频简介（超100字自动截断）"
+  "search": {
+    "description": "🔎 搜索下载",
+    "type": "object",
+    "items": {
+      "default_count": {
+        "type": "int",
+        "default": 20,
+        "min": 1,
+        "max": 50,
+        "description": "默认返回数"
+      },
+      "default_download_count": {
+        "type": "int",
+        "default": 3,
+        "min": 1,
+        "max": 20,
+        "description": "建议每次下载数"
+      },
+      "search_max_concurrent": {
+        "type": "int",
+        "default": 1,
+        "min": 1,
+        "max": 5,
+        "description": "并发下载数"
+      },
+      "search_show_progress": {
+        "type": "bool",
+        "default": true,
+        "description": "显示下载进度"
+      }
+    }
   },
-  "detect_show_pubtime": {
-    "description": "识别推送：显示发布时间",
-    "type": "bool",
-    "default": true,
-    "hint": "识别到B站链接时，是否显示视频发布时间"
-  },
-  "detect_show_link": {
-    "description": "识别推送：显示BV号链接",
-    "type": "bool",
-    "default": true,
-    "hint": "识别到B站链接时，是否显示完整视频链接"
-  },
-  "detect_show_stats": {
-    "description": "识别推送：显示播放数据",
-    "type": "bool",
-    "default": true,
-    "hint": "识别到B站链接时，是否显示播放量、弹幕、点赞等数据"
-  },
-  "detect_auto_summary": {
-    "description": "识别推送：自动生成总结",
-    "type": "bool",
-    "default": false,
-    "hint": "识别到B站链接时，是否自动生成视频总结（注意：会消耗LLM额度）"
-  },
-  "access_mode": {
-    "description": "群聊访问控制模式",
-    "type": "string",
-    "default": "blacklist",
-    "options": [
-      "blacklist",
-      "whitelist"
-    ],
-    "hint": "blacklist(黑名单模式: 列表中的群禁止使用) / whitelist(白名单模式: 仅列表中的群可使用)"
-  },
-  "group_list": {
-    "description": "群号列表（逗号分隔）",
-    "type": "string",
-    "default": "",
-    "hint": "黑名单/白名单的群号列表，用英文逗号分隔，如 123456,789012"
-  },
-  "output_image": {
-    "description": "总结以图片形式发送",
-    "type": "bool",
-    "default": true,
-    "hint": "开启后总结将渲染为精美图片发送（需要安装 wkhtmltopdf），关闭则发送纯文本"
-  },
-  "check_interval_minutes": {
-    "description": "定时检查新视频间隔 (分钟)",
-    "type": "int",
-    "default": 600,
-    "min": 5,
-    "max": 1440,
-    "hint": "多长时间检查一次订阅UP主是否有新视频，单位分钟"
-  },
-  "note_style": {
-    "description": "总结风格",
-    "type": "string",
-    "default": "professional",
-    "options": [
-      "concise",
-      "detailed",
-      "professional"
-    ],
-    "hint": "concise(简洁 — 仅核心要点) / detailed(详细 — 完整记录，适合学习) / professional(专业 — 结构化分析与深度总结)"
-  },
-  "enable_link": {
-    "description": "启用原片跳转链接",
-    "type": "bool",
-    "default": true,
-    "hint": "是否在总结中插入原片跳转时间戳链接"
-  },
-  "enable_summary": {
-    "description": "启用AI总结",
-    "type": "bool",
-    "default": true,
-    "hint": "是否在总结末尾加入AI生成总结"
-  },
-  "download_quality": {
-    "description": "音频下载质量",
-    "type": "string",
-    "default": "fast",
-    "options": [
-      "fast",
-      "medium",
-      "slow"
-    ],
-    "hint": "fast(快速32kbps) / medium(中等64kbps) / slow(高质128kbps)"
-  },
-  "processing_timeout": {
-    "description": "处理超时时间 (秒)",
-    "type": "int",
-    "default": 300,
-    "min": 60,
-    "max": 600,
-    "hint": "单个视频总结生成的最大超时时间"
-  },
-  "max_note_length": {
-    "description": "总结最大字符数",
-    "type": "int",
-    "default": 3000,
-    "min": 500,
-    "max": 10000,
-    "hint": "总结最大字符数，超过将自动截断（防止消息过长发送失败）"
-  },
-  "enable_auto_split": {
-    "description": "长视频自动分图",
-    "type": "bool",
-    "default": true,
-    "hint": "视频内容过长时，自动将总结拆分为多张图片输出，避免内容被截断"
-  },
-  "max_cards_per_image": {
-    "description": "每张图最多卡片数",
-    "type": "int",
-    "default": 6,
-    "min": 2,
-    "max": 12,
-    "hint": "每张总结图片最多包含多少个章节卡片，建议6-8个以保证图片大小适中"
-  },
-  "enable_forward_message": {
-    "description": "总结以合并转发发送",
-    "type": "bool",
-    "default": false,
-    "hint": "开启后，视频信息和AI总结将打包为合并转发（聊天记录）形式发送，包含封面、视频信息和完整总结"
-  },
-  "enable_auto_push": {
-    "description": "启用自动推送",
-    "type": "bool",
-    "default": false,
-    "hint": "是否启用定时检查和自动推送新视频信息"
-  },
-  "auto_push_summary": {
-    "description": "自动推送：推送视频总结",
-    "type": "bool",
-    "default": true,
-    "hint": "启用后，定时检查触发的自动推送会进行总结；关闭后仅发送视频基本信息（标题、封面、简介、链接等）"
-  },
-  "max_subscriptions": {
-    "description": "最大订阅数",
-    "type": "int",
-    "default": 20,
-    "min": 1,
-    "max": 100,
-    "hint": "每个会话最多订阅多少个UP主"
-  },
-  "push_groups": {
-    "description": "推送QQ群列表",
-    "type": "string",
-    "default": "",
-    "hint": "新视频总结推送到哪些QQ群，用英文逗号分隔，如 123456,789012。也可通过 /添加推送群 命令添加"
-  },
-  "push_users": {
-    "description": "推送QQ号列表",
-    "type": "string",
-    "default": "",
-    "hint": "新视频总结推送到哪些QQ号（私聊），用英文逗号分隔。也可通过 /添加推送号 命令添加"
-  },
-  "default_count": {
-    "description": "搜索默认数量",
-    "type": "int",
-    "default": 20,
-    "min": 1,
-    "max": 50,
-    "hint": "AI调用搜索列表功能时，如果未指定数量，则使用此默认值"
-  },
-  "default_download_count": {
-    "description": "建议下载数量",
-    "type": "int",
-    "default": 3,
-    "min": 1,
-    "max": 20,
-    "hint": "建议AI每次下载转写的视频数量，非硬性限制"
-  },
-  "search_max_concurrent": {
-    "description": "搜索下载并发数",
-    "type": "int",
-    "default": 1,
-    "min": 1,
-    "max": 5,
-    "hint": "同时进行下载和转写的视频数量，数量越大服务器压力越大"
-  },
-  "search_show_progress": {
-    "description": "搜索下载显示进度",
-    "type": "bool",
-    "default": true,
-    "hint": "AI搜索下载视频时，是否显示实时进度消息（如：进度 1/3）"
-  },
-  "prefer_subtitle": {
-    "description": "优先使用字幕",
-    "type": "bool",
-    "default": true,
-    "hint": "视频有字幕时优先获取字幕内容进行总结，没有字幕再下载音频转写（可节省时间和资源）"
+  "experimental": {
+    "description": "🧪 实验功能(默认关闭)",
+    "type": "object",
+    "items": {
+      "enable_multi_platform": {
+        "type": "bool",
+        "default": false,
+        "description": "多平台(YouTube/抖音)",
+        "hint": "⚠️ 实验性,默认关闭。开启后 /总结 也接受 YouTube/抖音链接(yt-dlp 下载,优先用平台字幕)。YouTube 需登录:发送 /YT登录 在聊天里贴 cookies(机器人自动保存,无需在服务器建文件;有封号风险,请用小号)。注意:无字幕时回退的 BCut ASR 仅针对中文优化,非中文视频转写质量很差。"
+      }
+    }
   }
 }

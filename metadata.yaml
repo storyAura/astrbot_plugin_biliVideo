@@ -1,6 +1,6 @@
-name: astrbot_plugin_biliVideo
+name: astrbot_plugin_bilivideo
 display_name: biliVideo 视频总结
-desc: 提供b站视频链接自动生成一份结构化的视频总结,带有订阅up主功能并定时推送最新视频
-version: v1.0.5a
+desc: 高品质 B 站视频解析与 AI 总结插件 - 支持订阅推送、扫码登录、智能搜索、合并转发、长视频分图、自动识别小程序与短链
+version: v2.0.0
 author: storyAura
 repo: https://github.com/storyAura/astrbot_plugin_biliVideo

@@ -1,11 +1,3 @@
-# 多余文件夹（参考项目、其他插件、旧版）
-BiliNote-master/
-astrbot-plugin-bilinote/
-astrbot-plugin-pic-mirror-fork/
-astrbot_plugin_bilivideo+/
-*.zip
-test_layout.html
-
 # Python
 __pycache__/
 *.py[cod]
@@ -14,36 +6,40 @@ __pycache__/
 dist/
 build/
 *.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# 运行时数据 (包含隐私信息)
+# Plugin runtime data (contains private cookies, subscriptions, generated images)
 data/
+bili_cookies.json
 *.json
 !_conf_schema.json
 
-# B站登录 Cookie (绝对不要上传!)
-bili_cookies.json
-
-# 生成的图片
+# Generated images (preserve only repo logos)
 *.png
 !logo.png
+!assets/*.png
 
-# 音频文件
+# Audio cache
 *.mp3
 *.wav
 *.m4a
 *.flac
 
-# IDE
+# IDE / OS
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# 虚拟环境
+# Virtual envs
 venv/
+.venv/
 .env/
+.envrc

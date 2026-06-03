@@ -1,85 +1,124 @@
-# 更新日志
+# Changelog
+
+All notable changes to this plugin are documented here. Format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## v2.0.0 — Architecture refresh
+
+> Major refactor. **Backward-compatible** for end users (commands and
+> config keys preserved) but a complete restructure under the hood.
+
+### Added
+
+- New layered package `bilivideo/` with clear single-responsibility modules:
+  `core`, `api`, `auth`, `parsing`, `transcription`, `downloader`, `llm`,
+  `summarize`, `render`, `messaging`, `subscription`, `access`, `cache`,
+  `handlers`, `tools`.
+- Typed configuration via `PluginConfig` dataclass with validation,
+  enum-restriction and clamping (no more `dict.get()` everywhere).
+- Structured exception hierarchy (`BiliVideoError`, `NetworkError`,
+  `TranscriptionError`, `LLMError`, …) — user-friendly messages now ride
+  on the exception itself instead of substring-matching.
+- LRU + TTL + single-flight cache (`LRUTTLCache`) shared by the WBI key
+  fetcher and `get_video_info`.
+- Shared `aiohttp.ClientSession` plus exponential-backoff retries for
+  every B 站 API call.
+- Per-user cooldown tracker for `/总结` (default 8 s, configurable).
+- In-flight deduplication (`InflightDeduper`) to fold concurrent requests
+  for the same BV into a single underlying job.
+- Atomic `JsonStore` (tempfile + `os.replace` + `fsync`) for the
+  subscription/push-target file — no more half-written JSON on crash.
+- Full PyTest suite with 71 tests covering URL extraction, pagination,
+  smart truncation, message parsing, subscription persistence, cooldown,
+  LRU cache, in-flight deduplication, access control, and config.
+- `pyproject.toml` with Ruff + MyPy + PyTest configuration.
+- `user_cooldown_seconds`, `llm_temperature`, `image_width`,
+  `forward_bot_name`, `forward_bot_uin`, and `trigger_keywords` config
+  options.
+
+### Changed
+
+- `main.py` shrunk from ~2,000 lines to ~160 lines; it now only registers
+  AstrBot commands and forwards them to handlers.
+- `metadata.yaml` repo URL fixed (it previously concatenated a stray
+  `yt-dlp` token, breaking the link).
+- `requirements.txt` now lists `segno` (was implicitly required by the
+  QR-login flow but missing from the manifest).
+- `_conf_schema.json` reorganised with per-section `[xxx]` description
+  prefixes for UI grouping; values now validated/clamped on load.
+- Cookie storage hardened: atomic writes + `chmod 0600` on creation.
+- Auto-detect (`on_all_message`) is now a small composition of typed
+  helpers (`MessageContext`, `TriggerSet`, URL extractor) instead of
+  ~300 lines of nested branches.
+- WBI signing is single-flight: concurrent requests share one fetch.
+- Scheduler iterations include jitter so multi-instance deployments don't
+  thunder simultaneously.
+
+### Fixed
+
+- `audio_meta.file_path` access on the subtitle-only path no longer
+  raises `AttributeError`.
+- Short-link resolution now uses async aiohttp throughout (was blocking
+  the event loop with `requests.head`).
+- `get_uploader_info` failures now fall back gracefully through video
+  lookup → search result → UID-based placeholder, mirroring the original
+  intent without the duplicate code.
+- Quote/reply detection: trigger keywords are configurable; the hard
+  intercept for `[CQ:reply` and `[引用消息]` is preserved.
+- `metadata.yaml` `name` is now lowercase `astrbot_plugin_bilivideo`
+  (was camelCase `astrbot_plugin_biliVideo`). This unblocks installation
+  on case-insensitive filesystems (Windows/macOS APFS) where the
+  AstrBot extractor would otherwise hit "directory already exists" —
+  closes [#14][issue14].
+
+[issue14]: https://github.com/storyAura/astrbot_plugin_biliVideo/issues/14
+
+### Security
+
+- `bili_cookies.json` is created with mode `0600` (was 0644) so SESSDATA
+  isn't world-readable on shared servers.
+- Cookie loading no longer surfaces SESSDATA values in debug logs.
+- Reduced surface for prompt-injection: search results pass through a
+  typed dataclass before reaching the LLM, with `<em>` highlighting
+  stripped server-side.
+
+### Removed
+
+- Module-level mutable globals (`_wbi_cache`, `_font_face_cache`)
+  replaced by encapsulated caches.
+- Legacy `services/`, `downloaders/`, `transcriber/`, `utils/`, `gpt/`,
+  `models/` directories — their contents now live in the new
+  `bilivideo/` package.
+
+---
 
 ## v1.0.5a (2026-05-14)
 
-### 新增
-
-- ✨ **自动推送可选附带总结** - 新增 `auto_push_summary` 配置项（默认 `true`）。开启时定时检查触发的推送会进行 AI 总结；关闭后仅发送视频基本信息（标题、封面、简介、链接等），不消耗 LLM 额度
-- 📝 `enable_auto_push` 文案微调，更准确地描述为"自动推送新视频信息"
-
-### 修复
-
-- 🐛 **修复引用小程序/链接消息再次触发自动总结** - `on_all_message` 入口新增两道硬拦截：检测底层 OneBot `[CQ:reply` 标识与 `[引用消息]` 文本前缀；遍历消息组件时一旦命中 `reply` / `quote` 类型即直接放弃。此前引用别人分享的 B 站小程序卡片或链接消息时，仍可能从 JSON 卡片中提取到 BV 号导致二次推送，现已彻底拦截
-
-### 优化
-
-- 🛡️ **保留触发关键词与@过滤等已有逻辑作为后备**，新增拦截不影响主动 `/总结` 命令、直接分享小程序/链接、以及在引用基础上加触发关键词手动唤起的场景
-
-> 致谢：feature 来自社区贡献者 [@Jeric-X](https://github.com/Jeric-X) 的 PR [#18](https://github.com/storyAura/astrbot_plugin_biliVideo/pull/18)
+- Optional summary on auto-push (`auto_push_summary`).
+- Hard-intercept quoted/reply messages from re-triggering auto detection.
 
 ## v1.0.4b (2026-05-14)
 
-### 修复
-
--  **修复字幕路径下总结后崩溃** - `note_service.py` 在仅使用平台字幕、未下载音频的流程中，结尾仍调用 `self._cleanup(audio_meta.file_path)`，`audio_meta` 为 `None` 时抛出 `AttributeError: 'NoneType' object has no attribute 'file_path'`，导致总结生成失败提示
--  **增强清理函数健壮性** - `_cleanup` 增加 `file_path` 空值判断，避免传入 `None` 或空字符串时再次报错
+- Fix `audio_meta.file_path` crash on subtitle-only path.
+- Harden cleanup function to skip `None`/empty paths.
 
 ## v1.0.4 (2026-05-13)
 
-### 修复
-
--  **修复无字幕视频总结崩溃** - 走 bcut 转写流程时，`note_service.py` 中局部 import 导致 `extract_video_id` 未绑定（UnboundLocalError），现已移除多余的局部导入
--  **修复短链接解析异常** - `main.py` 中解析 b23.tv 短链后匹配 BV 号的正则缺少右括号，导致 `unterminated subpattern` 错误
+- Fix `extract_video_id` UnboundLocalError for BCut transcript flow.
+- Fix unterminated subpattern regex on `b23.tv` resolution.
 
 ## v1.0.3 (2026-05-12)
 
-### 修复
-
-- **修复引用消息误触发识别问题** - 当用户引用包含B站链接的消息并回复简短内容（如 `@某人 1`）时，不再误识别引用内容中的链接
-- **新增触发关键词机制** - 引用视频消息时，只有在回复中包含触发关键词（如"总结"、"看看"、"分析"等）时才解析视频，避免重复解析
-- **增强艾特消息过滤** - 纯艾特消息（如 `@某人`、`@某人 123`）不再触发识别
-- **智能搜索支持合并转发** - 修复智能搜索功能在生成总结时不使用合并转发模式的问题
-- **修复多视频合并转发信息缺失** - 多视频合并转发时，现在会显示封面图、UP主名称和播放数据
-
-### 新增
-
-- **合并转发模式** - 新增 `enable_forward_message` 配置项，开启后视频信息和AI总结将打包为聊天记录形式发送，美观不刷屏
-- **长视频自动分图** - 新增 `enable_auto_split` 和 `max_cards_per_image` 配置，长视频总结自动拆分为多张图片
-- **智能触发关键词** - 支持中英文触发关键词，包括"总结"、"看看"、"分析"、"summary"等，更智能地判断用户意图
-- **智能消息过滤文档** - 新增详细的引用消息过滤和触发关键词说明
-- **多视频合并转发** - 智能搜索多个视频时，自动创建包含所有视频信息的合并转发
-- **进度提示可配置** - 新增 `search_show_progress` 配置项，可选择是否显示下载进度
-- **优先使用字幕** - 新增 `prefer_subtitle` 配置项，视频有字幕时优先获取字幕，节省30-60秒/视频
-
-### 优化
-
-- **调试日志增强** - 开启 `debug_mode` 后可查看详细的消息过滤、触发关键词检测和链接提取日志
-- **链接提取优化** - 引用消息时根据触发关键词智能决定是否从引用内容提取链接
-- **README 更新** - 新增合并转发模式、智能消息过滤和触发关键词的详细说明
-- **智能搜索体验** - 单视频和多视频场景都支持合并转发，信息展示更清晰
-- **性能优化** - 优先使用字幕可显著减少处理时间和带宽消耗
+- Quote-message false-trigger fix; trigger keyword mechanism.
+- Forward-message mode; long-summary pagination.
+- Prefer subtitles config option.
 
 ## v1.0.2 (2026-03-01)
 
-### 修复
-
-- 修复插件无法加载的问题（兼容 AstrBot v4.17.2）
-- 修复配置面板开关不生效的问题
-- 修复订阅 UP 主时提示"风控校验失败"导致无法订阅的问题
-- 修复 B站短链接解析会卡住的问题
-
-### 新增
-
-- 群里分享 B站小程序/链接时，自动推送视频封面、标题、UP 主等信息
-- 可以在配置面板里选择推送哪些内容（封面、UP主名、简介、发布时间、链接、播放数据）
-- 新增"自动总结"选项，识别到链接时自动生成视频总结（默认关闭，会消耗 LLM 额度）
-- 新增 `/识别开关` 命令，在群里直接开关自动识别，不用去面板操作
-- 推送信息新增视频发布时间
-
-### 优化
-
-- 配置面板里 LLM 设置和识别开关放到了更显眼的位置
+- AstrBot v4.17.2 compatibility, mini-app link recognition,
+  `/识别开关` toggle command.
 
 ## v1.0.1
 
-- 首次发布
+- First release.

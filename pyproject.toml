@@ -1,0 +1,61 @@
+[project]
+name = "astrbot_plugin_biliVideo"
+description = "Masterpiece-grade Bilibili video summarization plugin for AstrBot"
+version = "2.0.0"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+readme = "README.md"
+authors = [{ name = "storyAura" }]
+dependencies = [
+  "aiohttp>=3.9",
+  "yt-dlp>=2024.1.0",
+  "imageio-ffmpeg>=0.4",
+  "markdown>=3.4",
+  "imgkit>=1.2",
+  "segno>=1.5",
+  "requests>=2.31",
+  "Pillow>=10.0",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM", "ARG", "PL", "RUF"]
+ignore = [
+  # Intentional design choices in this codebase:
+  "PLR0913",  # too-many-arguments — orchestrators take many deps
+  "PLR0912",  # too-many-branches  — auto-detect waterfall is one big branch
+  "PLR0915",  # too-many-statements
+  "PLR0911",  # too-many-return-statements — clear waterfall functions
+  "PLR2004",  # magic-value-comparison
+  "B008",     # function call in default arg — used for FunctionTool params dict
+  "PLW0603",  # global-statement — bounded module caches
+  "PLC0415",  # import-outside-top-level — lazy AstrBot/PIL imports are intentional
+  "RUF001",   # ambiguous-unicode — Chinese/full-width punctuation is intentional
+  "RUF002",   # ambiguous-unicode in docstrings
+  "ARG001",   # unused-argument — `event` is required by AstrBot signatures
+  "ARG002",   # unused-method-argument — Provider Protocol arguments
+  "SIM102",   # collapsible-if — readability trumps the saved indentation
+  "SIM117",   # multiple-with — splitting `async with`s reads more clearly
+  "PLW2901", # for-loop-variable — local rebinding is intentional in URL parsing
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PLR0915", "PLR2004", "ARG001", "RUF015"]
+"main.py" = ["RUF006"]  # ditto for create_task held via attribute
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+asyncio_mode = "auto"
+
+[tool.setuptools.packages.find]
+include = ["bilivideo*"]
+
+[tool.mypy]
+python_version = "3.10"
+strict_optional = true
+warn_unused_ignores = true
+ignore_missing_imports = true
