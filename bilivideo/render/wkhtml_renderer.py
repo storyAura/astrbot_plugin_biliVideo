@@ -127,6 +127,7 @@ class WkHtmlRenderer:
             "encoding": "UTF-8",
             "quality": "94",
             "disable-javascript": "",
+            "disable-local-file-access": "",
             "no-stop-slow-scripts": "",
             "disable-smart-width": "",
         }
@@ -142,6 +143,11 @@ class WkHtmlRenderer:
         if not destination.exists():
             raise RenderError("imgkit produced no file")
         size = destination.stat().st_size
-        if size <= 0:
-            raise RenderError(f"imgkit produced empty file: {destination}")
+        if size < 2048:
+            # A real 1400px-wide card PNG is always several KB; a sub-2KB file
+            # means a blank or clipped render — fail so the chain falls through
+            # to Pillow rather than delivering an empty image.
+            raise RenderError(
+                f"imgkit produced an implausibly small file ({size}B): {destination}"
+            )
         logger.info(f"rendered {destination.name} ({size} bytes, {elapsed}s)")

@@ -98,3 +98,21 @@ def test_invalid_paths_return_visible_fallback_text(tmp_path, monkeypatch) -> No
     assert isinstance(rendered, str)
     assert "图片渲染失败" in rendered
     assert str(missing) in rendered
+
+
+def test_unexpected_exception_returns_fallback_text(monkeypatch) -> None:
+    """A non-RenderError surprise must still degrade to visible text."""
+
+    monkeypatch.setattr(_render_helper, "Image", _Image)
+
+    class _BoomRenderer:
+        def render(self, *args, **kwargs):
+            raise ValueError("totally unexpected")
+
+    rendered = _render_helper.render_note_components(
+        _Services(_BoomRenderer()), "# 标题\n\n内容"
+    )
+
+    assert isinstance(rendered, str)
+    assert "图片渲染失败" in rendered
+    assert "totally unexpected" in rendered

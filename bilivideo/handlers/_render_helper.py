@@ -26,8 +26,26 @@ except Exception:  # pragma: no cover - test stub
 
 
 def render_note_components(services: BiliVideoServices, markdown_text: str) -> list[Any] | str:
-    """Convert Markdown to either a list of Image components or raw text."""
+    """Convert Markdown to image components or raw text — never raises.
 
+    Any unexpected failure (a renderer surprise, a filesystem error while
+    validating an output path, an AstrBot component constructor blowing up,
+    …) degrades to a visible text fallback. A rendering bug can therefore
+    never crash the calling handler or leave the user with no response.
+    """
+
+    try:
+        return _render_note_components_inner(services, markdown_text)
+    except Exception as exc:  # pragma: no cover - defensive catch-all
+        logger.warning(
+            f"render_note_components unexpected failure: {exc}", exc_info=True
+        )
+        return _render_fallback_text(markdown_text, f"渲染流程异常: {exc}")
+
+
+def _render_note_components_inner(
+    services: BiliVideoServices, markdown_text: str
+) -> list[Any] | str:
     if not services.config.output_image:
         return markdown_text
     if Image is None:
@@ -58,7 +76,11 @@ def render_note_components(services: BiliVideoServices, markdown_text: str) -> l
     for path in paths:
         if not isinstance(path, Path):
             path = Path(path)
-        if not path.exists() or path.stat().st_size <= 0:
+        try:
+            usable = path.exists() and path.stat().st_size > 0
+        except OSError:
+            usable = False
+        if not usable:
             invalid_paths.append(str(path))
             continue
         try:

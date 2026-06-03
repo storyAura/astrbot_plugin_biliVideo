@@ -89,8 +89,10 @@ _RISKY_TAGS = (
     "frame",
     "frameset",
 )
-# Schemes that can execute when placed in an href/src attribute.
-_DANGEROUS_SCHEME_RE = re.compile(r"(?i)\b(?:java|vb)script:")
+# Schemes that can execute or read local files when placed in an href/src
+# attribute (`file:` matters even with JavaScript disabled: wkhtmltoimage still
+# fetches resources, so a crafted <img src="file:///…"> could read host files).
+_DANGEROUS_SCHEME_RE = re.compile(r"(?i)\b(?:javascript|vbscript|file):")
 # Inline event handlers: on<word>= followed by a quoted or bare value.
 _EVENT_HANDLER_RE = re.compile(
     r"""(?ix)            # case-insensitive, verbose
@@ -211,24 +213,23 @@ body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans SC','Hiragino Sans G
                    radial-gradient(ellipse at 30% 100%,rgba(139,92,246,.12) 0%,transparent 55%);
         pointer-events:none}
 .header h1{position:relative;z-index:1;font-size:28px;font-weight:800;color:#f1f5f9;margin:0 auto;
-           line-height:1.4;letter-spacing:.5px;
-           background:linear-gradient(90deg,#e2e8f0 0%,#93c5fd 50%,#c4b5fd 100%);
-           -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
-           max-width:90%}
+           line-height:1.4;letter-spacing:.5px;max-width:90%}
 .header-line{position:relative;z-index:1;width:80px;height:3px;margin:14px auto 0;
              background:linear-gradient(90deg,#60a5fa,#8b5cf6);border-radius:2px}
-.content{padding:28px 40px 20px;display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
-.card,.card-intro{background:rgba(30,33,64,.65);border-radius:12px;
+.content{padding:28px 40px 20px}
+.content::after{content:'';display:block;clear:both}
+.card,.card-intro{background:rgba(30,33,64,.82);border-radius:12px;
                    border:1px solid rgba(148,163,184,.08);border-left:4px solid #60a5fa;
-                   padding:20px 24px;box-shadow:0 2px 8px rgba(0,0,0,.2);backdrop-filter:blur(8px)}
-.card-intro{grid-column:1 / -1;border-left-color:#a5f3c4;background:rgba(52,211,153,.06)}
+                   padding:20px 24px;box-shadow:0 2px 8px rgba(0,0,0,.25);
+                   float:left;width:48%;margin:0 1% 20px}
+.card-intro{float:none;width:98%;clear:both;border-left-color:#a5f3c4;background:rgba(52,211,153,.10)}
 h1{font-size:22px;font-weight:700;color:#e2e8f0;margin-bottom:12px}
 h2{font-size:16px;font-weight:700;color:#e2e8f0;margin:-20px -24px 14px;padding:12px 24px 10px;
    border-radius:12px 12px 0 0;background:rgba(0,0,0,.18);
    border-bottom:1px solid rgba(148,163,184,.08);display:flex;align-items:center;gap:8px;
    letter-spacing:.3px}
 h2::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;
-           background:currentColor;opacity:.6;flex-shrink:0}
+           background:currentColor;opacity:.6;flex-shrink:0;margin-right:8px;vertical-align:middle}
 h3{font-size:15px;font-weight:700;color:#93c5fd;margin-top:16px;margin-bottom:8px;
    padding-left:12px;border-left:3px solid rgba(96,165,250,.4)}
 h4,h5,h6{font-size:14px;font-weight:600;color:#c4b5fd;margin-top:12px;margin-bottom:6px}
@@ -258,11 +259,11 @@ th{background:rgba(96,165,250,.12);color:#93c5fd;font-weight:700;padding:8px 12p
    text-align:left;border-bottom:2px solid rgba(96,165,250,.2);font-size:14px}
 td{padding:6px 12px;border-bottom:1px solid rgba(148,163,184,.08);font-size:14px}
 tr:nth-child(even) td{background:rgba(148,163,184,.03)}
-.footer{padding:14px 40px;border-top:1px solid rgba(148,163,184,.1);display:flex;align-items:center;
-        justify-content:space-between;background:rgba(0,0,0,.1)}
-.ftxt{font-size:11px;color:#64748b;letter-spacing:.8px;font-family:'JetBrains Mono',monospace}
+.footer{padding:14px 40px;border-top:1px solid rgba(148,163,184,.1);background:rgba(0,0,0,.1)}
+.footer::after{content:'';display:block;clear:both}
+.ftxt{float:left;font-size:11px;color:#64748b;letter-spacing:.8px;font-family:'JetBrains Mono',monospace}
 .ftxt .br{color:#94a3b8;font-weight:600}
-.ftime{font-size:11px;color:#4a5568;letter-spacing:.5px;font-family:'JetBrains Mono',monospace}
+.ftime{float:right;font-size:11px;color:#4a5568;letter-spacing:.5px;font-family:'JetBrains Mono',monospace}
 """
 
 

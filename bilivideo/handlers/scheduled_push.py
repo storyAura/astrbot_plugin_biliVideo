@@ -54,6 +54,9 @@ async def push_callback(
 
     services.logger.info(f"new video for {sub.name}: {latest.title}")
     chain_components = await _build_chain(services, sub, latest)
+    if not chain_components:
+        services.logger.warning(f"empty push chain for {sub.name}; skipping send")
+        return 0
 
     push_origins = await services.subscription_manager.get_push_origins() or [origin]
     sent_count = 0
@@ -86,6 +89,9 @@ async def _build_chain(
 ) -> list[Any]:
     push_header = f"🔔 UP主【{sub.name}】发布了新视频!\n"
     config = services.config
+    if Plain is None:  # AstrBot message components unavailable; cannot build a chain
+        services.logger.error("scheduled push: Plain component unavailable; skipping")
+        return []
     bvid = latest.bvid
     video_url = f"https://www.bilibili.com/video/{bvid}"
     info: VideoInfo | None = None

@@ -44,7 +44,10 @@ async def yield_note_response(
             )
             yield event.chain_result([forward])  # type: ignore[attr-defined]
             return
-        except RuntimeError as exc:
+        except Exception as exc:
+            # Any forward-node failure (missing AstrBot stubs, version drift in
+            # Node/Nodes, a bad cover URL, …) must still deliver the rendered
+            # image/text below rather than crash the handler.
             services.logger.warning(f"forward fallback: {exc}")
     if isinstance(rendered, list):
         for component in rendered:
