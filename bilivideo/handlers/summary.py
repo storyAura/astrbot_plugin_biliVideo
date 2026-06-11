@@ -138,10 +138,60 @@ def _is_platform_supported(video_url: str, *, enable_multi_platform: bool) -> bo
 
 
 def _extract_video_url(raw_msg: str, event: object) -> str:
+    # 辅助递归函数：从消息链组件中提取视频 URL
+    def _extract_from_chain(chain) -> str | None:
+        if not chain:
+            return None
+        for comp in chain:
+            # 处理 Reply 段：深入其内部的 chain
+            if hasattr(comp, "chain") and comp.chain:
+                result = _extract_from_chain(comp.chain)
+                if result:
+                    return result
+            # 处理 Plain 段
+            text = getattr(comp, "text", None)
+            if isinstance(text, str):
+                # 尝试从文本中提取各种 URL
+                url = (extract_long_url(text) or extract_short_url(text) or 
+                       extract_url(text))
+                if url:
+                    return url
+                bvid = extract_bvid(text)
+                if bvid:
+                    return f"https://www.bilibili.com/video/{bvid}"
+            # 处理 Json 段（QQ 小程序卡片）
+            if hasattr(comp, "data") and isinstance(comp.data, dict):
+                data = comp.data
+                # B站卡片典型路径
+                try:
+                    qqdocurl = data.get("meta", {}).get("detail_1", {}).get("qqdocurl")
+                    if qqdocurl and isinstance(qqdocurl, str):
+                        # 短链需要规范化为完整链接
+                        return qqdocurl  # 后续会被 _canonicalize_video_url 处理
+                except Exception:
+                    pass
+                # 备用：直接找 url 字段
+                if "url" in data and isinstance(data["url"], str):
+                    return data["url"]
+            # 如果 comp 本身是字符串（某些框架下）
+            if isinstance(comp, str):
+                url = (extract_long_url(comp) or extract_short_url(comp) or 
+                       extract_url(comp))
+                if url:
+                    return url
+                bvid = extract_bvid(comp)
+                if bvid:
+                    return f"https://www.bilibili.com/video/{bvid}"
+        return None
+
     full_text = raw_msg
     message_obj = getattr(event, "message_obj", None)
     if message_obj is not None:
         chain = getattr(message_obj, "message", None) or []
+        # 新增：优先从消息链中直接提取 URL
+        direct_url = _extract_from_chain(chain)
+        if direct_url:
+            return direct_url
         plain_pieces: list[str] = []
         for comp in chain:
             text = getattr(comp, "text", None)
@@ -184,7 +234,6 @@ def _extract_video_url(raw_msg: str, event: object) -> str:
     if bvid:
         return f"https://www.bilibili.com/video/{bvid}"
     return ""
-
 
 async def _canonicalize_video_url(services: BiliVideoServices, video_url: str) -> str:
     if detect_platform(video_url) != "bilibili":
