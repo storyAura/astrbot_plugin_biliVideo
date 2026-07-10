@@ -36,6 +36,21 @@ async def push_callback(
     if services.astrbot_context is None:
         services.logger.error("push_callback: astrbot_context is None; cannot deliver push")
         return 0
+    # Serialize per subscription and re-read state under the lock: `sub` is a
+    # snapshot from scan start, so a concurrent manual /检查更新 may already
+    # have pushed and recorded this video.
+    async with services.push_locks.acquire((origin, sub.mid)):
+        fresh = await services.subscription_manager.get_subscription(origin, sub.mid)
+        if fresh is None:  # unsubscribed while waiting for the lock
+            return 0
+        return await _push_if_new(services, origin, fresh)
+
+
+async def _push_if_new(
+    services: BiliVideoServices,
+    origin: str,
+    sub: Subscription,
+) -> int:
     try:
         videos = await get_latest_videos(services.http_client, sub.mid, count=1)
     except BiliVideoError as exc:
@@ -69,7 +84,12 @@ async def push_callback(
             services.logger.error(f"push to {target} failed: {exc}")
 
     if sent_count > 0:
-        await services.subscription_manager.update_last_video(origin, sub.mid, latest.bvid)
+        try:
+            await services.subscription_manager.update_last_video(origin, sub.mid, latest.bvid)
+        except OSError as exc:
+            services.logger.error(
+                f"pushed {latest.bvid} but persisting last_bvid failed: {exc}; may re-push next cycle"
+            )
         return 1
 
     services.logger.warning(
@@ -118,7 +138,7 @@ async def _build_chain(
     try:
         note = await services.orchestrator.generate(video_url)
         info = note.video_info
-        rendered = render_note_components(services, note.markdown)
+        rendered = await render_note_components(services, note.markdown)
     except BiliVideoError as exc:
         services.logger.warning(f"summary generation failed: {exc}")
         rendered = exc.user_message
@@ -130,19 +150,8 @@ async def _build_chain(
                 rendered,
                 bot_name=config.forward_bot_name,
                 bot_uin=config.forward_bot_uin,
+                header=push_header.rstrip(),
             )
-            header_node = forward.nodes[0] if hasattr(forward, "nodes") else None
-            if header_node is not None:
-                from astrbot.api.message_components import Node  # type: ignore[import]
-
-                forward.nodes.insert(  # type: ignore[attr-defined]
-                    0,
-                    Node(
-                        content=[Plain(push_header.rstrip())],
-                        name=config.forward_bot_name,
-                        uin=config.forward_bot_uin,
-                    ),
-                )
             return [forward]
         except Exception as exc:
             services.logger.warning(f"forward path failed, fallback: {exc}")

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .access.cooldown import CooldownTracker
 from .access.inflight import InflightDeduper
+from .access.keyed_lock import KeyedLocks
 from .api.client import BilibiliHTTPClient
 from .auth.cookies import CookieJar
 from .auth.qrlogin import QRLoginService
@@ -116,6 +117,9 @@ class BiliVideoServices:
         # Anti-spam
         self.cooldown = CooldownTracker(window_seconds=config.user_cooldown_seconds)
         self.inflight: InflightDeduper[str, object] = InflightDeduper()
+        # Serializes check-and-push per (origin, mid) so manual /检查更新 and
+        # the scheduled loop can't push the same video twice.
+        self.push_locks = KeyedLocks()
 
         # Run-time mutable flags
         runtime_detect = self.runtime_state.get_bool("enable_miniapp_detect")
@@ -160,4 +164,8 @@ class BiliVideoServices:
             self._download_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._download_task
+        # Refuse further writes from any still-running handler of THIS (now
+        # old) instance, so a stale full-snapshot dump can't clobber data the
+        # replacement instance writes after a hot-reload.
+        self.subscription_manager.close()
         await self.http_client.close()

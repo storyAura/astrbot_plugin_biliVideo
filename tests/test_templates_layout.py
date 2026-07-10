@@ -7,7 +7,21 @@ and `file:` URIs must be neutralized.
 
 from __future__ import annotations
 
+import re
+
 from bilivideo.render.templates import build_full_html, sanitize_html
+
+
+def _style(html: str) -> str:
+    match = re.search(r"<style>(.*?)</style>", html, re.DOTALL)
+    assert match is not None
+    return re.sub(r"\s+", "", match.group(1))
+
+
+def _rule(style: str, selector: str) -> str:
+    match = re.search(rf"{re.escape(selector)}\{{([^}}]+)\}}", style)
+    assert match is not None
+    return match.group(1)
 
 
 def _html(title: str = "标题") -> str:
@@ -35,8 +49,36 @@ class TestEngineSafeLayout:
         assert "display:grid" not in html
         assert "grid-template-columns" not in html
 
-    def test_cards_use_float_columns(self) -> None:
-        assert "float:left" in _html()
+    def test_cards_use_single_column_blocks(self) -> None:
+        style = _style(_html())
+        card_rule = _rule(style, ".card,.card-intro")
+        assert "float:left" not in card_rule
+        assert "width:48%" not in card_rule
+        assert "float:none" in card_rule
+        assert "width:100%" in card_rule
+        assert "clear:both" in card_rule
+
+    def test_content_has_overflow_guards(self) -> None:
+        style = _style(_html())
+        body_rule = _rule(style, "body")
+        image_rule = _rule(style, "img")
+        pre_rule = _rule(style, "pre")
+        table_rule = _rule(style, "table")
+        cell_rule = _rule(style, "th,td")
+        assert "overflow-wrap:anywhere" in body_rule
+        assert "word-wrap:break-word" in body_rule
+        assert "max-width:100%" in image_rule
+        assert "height:auto" in image_rule
+        assert "display:block" in image_rule
+        assert "white-space:pre-wrap" in pre_rule
+        assert "table-layout:fixed" in table_rule
+        assert "overflow-wrap:anywhere" in cell_rule
+
+    def test_custom_width_controls_canvas(self) -> None:
+        html = build_full_html(
+            "<div class='card'>x</div>", title_text="标题", footer_time="t", width=900
+        )
+        assert "width:900px" in html
 
 
 class TestSanitizerBlocksFileScheme:

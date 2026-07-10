@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shutil
+import threading
 from collections.abc import Iterable, Mapping
 from functools import lru_cache
 from hashlib import sha256
@@ -57,6 +58,10 @@ DEFAULT_SUBTITLE_LANGS: tuple[str, ...] = (
     "en",
     "en-US",
 )
+
+
+class DownloadCancelledError(Exception):
+    """Raised from the progress hook when the caller cancelled the download."""
 
 
 class YtDlpDownloader:
@@ -132,6 +137,7 @@ class YtDlpDownloader:
         *,
         output_dir: str | Path | None = None,
         quality: str = "fast",
+        cancel_event: threading.Event | None = None,
     ) -> AudioDownloadResult:
         target = Path(output_dir) if output_dir else self._data_dir
         target.mkdir(parents=True, exist_ok=True)
@@ -159,10 +165,27 @@ class YtDlpDownloader:
         if ffmpeg_path:
             opts["ffmpeg_location"] = ffmpeg_path
 
+        if cancel_event is not None:
+            # The caller (asyncio side) abandons the executor thread on
+            # timeout; without this hook yt-dlp would keep downloading the
+            # whole file, tying up a pool thread and leaving orphan output.
+            def _abort_if_cancelled(_progress: dict) -> None:
+                if cancel_event.is_set():
+                    raise DownloadCancelledError("download cancelled by caller")
+
+            opts["progress_hooks"] = [_abort_if_cancelled]
+
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(video_url, download=True)
+        except DownloadCancelledError:
+            self._sweep_partial_files(target, video_url)
+            raise
         except yt_dlp.utils.DownloadError as exc:
+            if cancel_event is not None and cancel_event.is_set():
+                # yt-dlp wraps hook exceptions into DownloadError on some paths
+                self._sweep_partial_files(target, video_url)
+                raise DownloadCancelledError("download cancelled by caller") from exc
             raise _wrap_download_error(exc, video_url) from exc
 
         video_id = info.get("id", "")
@@ -176,6 +199,19 @@ class YtDlpDownloader:
             video_id=str(video_id),
             raw_info=dict(info),
         )
+
+    @staticmethod
+    def _sweep_partial_files(target: Path, video_url: str) -> None:
+        """Best-effort removal of output a cancelled download left behind."""
+
+        video_id = _extract_video_id_from_url(video_url)
+        if not video_id:
+            return
+        for path in target.glob(f"{video_id}.*"):
+            try:
+                path.unlink()
+            except OSError as exc:
+                logger.debug(f"partial file cleanup failed for {path}: {exc}")
 
     def download_subtitles(
         self,
@@ -216,15 +252,25 @@ class YtDlpDownloader:
             logger.info(f"{video_id}: no platform subtitles")
             return None
 
-        for lang in lang_list:
-            if lang in subtitles:
-                return _parse_sub(subtitles[lang], lang, target, video_id)
-        # any other available language except 'danmaku'
-        for lang, sub_info in subtitles.items():
-            if lang == "danmaku":
-                continue
-            return _parse_sub(sub_info, lang, target, video_id)
-        return None
+        # Subtitle files ({video_id}.{lang}.{ext}) are only needed for this
+        # parse; sweep them afterwards so they don't accumulate forever. The
+        # audio file is a single-suffix "{video_id}.mp3" and is not matched.
+        try:
+            for lang in lang_list:
+                if lang in subtitles:
+                    return _parse_sub(subtitles[lang], lang, target, video_id)
+            # any other available language except 'danmaku'
+            for lang, sub_info in subtitles.items():
+                if lang == "danmaku":
+                    continue
+                return _parse_sub(sub_info, lang, target, video_id)
+            return None
+        finally:
+            for path in target.glob(f"{video_id}.*.*"):
+                try:
+                    path.unlink()
+                except OSError as exc:
+                    logger.debug(f"subtitle cleanup failed for {path}: {exc}")
 
 
 # ──────────────────────────── helpers ──────────────────────────────

@@ -14,7 +14,11 @@ def is_allowed(origin: str, *, config: PluginConfig) -> bool:
     if not group_list:
         return True
 
-    matches = any(f":{gid}" in origin or origin.endswith(gid) for gid in group_list)
+    # Exact segment match: a bare substring / suffix check would let group id
+    # "10000" match an unrelated origin ending in "...910000" (whitelist
+    # bypass) or wrongly block it in blacklist mode.
+    segments = origin.split(":")
+    matches = any(gid in segments for gid in group_list)
     if config.access_mode == "whitelist":
         return matches
     if config.access_mode == "blacklist":

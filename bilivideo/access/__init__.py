@@ -3,5 +3,6 @@
 from .control import is_allowed
 from .cooldown import CooldownTracker
 from .inflight import InflightDeduper
+from .keyed_lock import KeyedLocks
 
-__all__ = ["CooldownTracker", "InflightDeduper", "is_allowed"]
+__all__ = ["CooldownTracker", "InflightDeduper", "KeyedLocks", "is_allowed"]

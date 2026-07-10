@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
+from .. import __version__
 from ..services import BiliVideoServices
 
 HELP_TEMPLATE = """\
-📝 biliVideo 视频总结助手 v2.0
+📝 biliVideo 视频总结助手 v{version}
 ━━━━━━━━━━━━━━━━━━━
 🔐 B站登录状态: {login_status}
 
@@ -27,7 +28,7 @@ HELP_TEMPLATE = """\
   /订阅列表 (sublist/subs)
   /检查更新 (check)
 
-📌 推送目标:
+📌 推送目标(增删仅限 bot 管理员):
   /添加推送群 (addpg) <群号>
   /添加推送号 (addpu) <QQ号>
   /推送列表 (pushls)
@@ -50,5 +51,7 @@ async def handle_help(services: BiliVideoServices, event: object) -> AsyncIterat
     login_status = "✅ 已登录" if services.is_logged_in() else "❌ 未登录"
     platform_scope = "B站 / YouTube / 抖音 " if services.config.enable_multi_platform else "B站"
     yield event.plain_result(  # type: ignore[attr-defined]
-        HELP_TEMPLATE.format(login_status=login_status, platform_scope=platform_scope)
+        HELP_TEMPLATE.format(
+            version=__version__, login_status=login_status, platform_scope=platform_scope
+        )
     )

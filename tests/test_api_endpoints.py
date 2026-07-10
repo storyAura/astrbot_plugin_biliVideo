@@ -25,7 +25,7 @@ class _StubClient:
 
 @pytest.mark.asyncio
 async def test_uploader_info_api_error_returns_none(monkeypatch) -> None:
-    async def _signed(params, *, cookies=None):
+    async def _signed(params, *, client=None):
         return {**params, "w_rid": "x"}
 
     monkeypatch.setattr(endpoints, "sign_params", _signed)
@@ -36,7 +36,7 @@ async def test_uploader_info_api_error_returns_none(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_latest_videos_api_error_returns_empty(monkeypatch) -> None:
-    async def _signed(params, *, cookies=None):
+    async def _signed(params, *, client=None):
         return {**params, "w_rid": "x"}
 
     monkeypatch.setattr(endpoints, "sign_params", _signed)
@@ -47,7 +47,7 @@ async def test_latest_videos_api_error_returns_empty(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_search_videos_skips_wbi_when_signing_unavailable(monkeypatch) -> None:
-    async def _unsigned(params, *, cookies=None):
+    async def _unsigned(params, *, client=None):
         return dict(params)
 
     monkeypatch.setattr(endpoints, "sign_params", _unsigned)
@@ -77,7 +77,7 @@ async def test_search_videos_skips_wbi_when_signing_unavailable(monkeypatch) -> 
 
 @pytest.mark.asyncio
 async def test_search_videos_falls_back_from_wbi_error(monkeypatch) -> None:
-    async def _signed(params, *, cookies=None):
+    async def _signed(params, *, client=None):
         return {**params, "w_rid": "x"}
 
     monkeypatch.setattr(endpoints, "sign_params", _signed)

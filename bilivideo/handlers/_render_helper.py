@@ -7,6 +7,7 @@ package the result without knowing about the renderer internals.
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from pathlib import Path
@@ -25,8 +26,13 @@ except Exception:  # pragma: no cover - test stub
     Plain = None  # type: ignore[assignment]
 
 
-def render_note_components(services: BiliVideoServices, markdown_text: str) -> list[Any] | str:
+async def render_note_components(
+    services: BiliVideoServices, markdown_text: str
+) -> list[Any] | str:
     """Convert Markdown to image components or raw text — never raises.
+
+    Rendering (wkhtmltoimage subprocess or Pillow CPU drawing) takes seconds,
+    so it runs in a worker thread to keep the event loop responsive.
 
     Any unexpected failure (a renderer surprise, a filesystem error while
     validating an output path, an AstrBot component constructor blowing up,
@@ -35,7 +41,9 @@ def render_note_components(services: BiliVideoServices, markdown_text: str) -> l
     """
 
     try:
-        return _render_note_components_inner(services, markdown_text)
+        return await asyncio.to_thread(
+            _render_note_components_inner, services, markdown_text
+        )
     except Exception as exc:  # pragma: no cover - defensive catch-all
         logger.warning(
             f"render_note_components unexpected failure: {exc}", exc_info=True

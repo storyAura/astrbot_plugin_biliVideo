@@ -98,7 +98,7 @@ async def handle_auto_detect(
         except BiliVideoError as exc:
             yield event.plain_result(exc.user_message)  # type: ignore[attr-defined]
             return
-        components = render_note_components(services, note.markdown)
+        components = await render_note_components(services, note.markdown)
         async for resp in yield_note_response(services, event, components, video_info=info):
             yield resp
 

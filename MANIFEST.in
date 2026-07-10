@@ -1,0 +1,4 @@
+# metadata.yaml is the single source of the plugin version
+# (bilivideo/__init__.py parses it); ship it in sdists so builds
+# don't silently fall back to 0.0.0.
+include metadata.yaml

@@ -43,7 +43,7 @@ def _wkhtmltoimage_path() -> str | None:
 class RenderChain:
     """Try each available backend until one produces output."""
 
-    def __init__(self, *, output_dir: str | Path, image_width: int = 1400) -> None:
+    def __init__(self, *, output_dir: str | Path, image_width: int = 900) -> None:
         self._backends: list[tuple[str, _Renderer]] = []
         self._diagnostics: dict[str, str] = {}
 

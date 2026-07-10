@@ -33,17 +33,24 @@ class InflightDeduper(Generic[K, V]):
                 owner = True
 
         if not owner:
-            return await fut
+            # shield: a cancelled waiter must not cancel the shared Future,
+            # which would poison this key for every later caller (the owner's
+            # set_result would raise InvalidStateError and skip the pop).
+            return await asyncio.shield(fut)
 
         try:
             value = await factory()
         except BaseException as exc:
-            fut.set_exception(exc)
-            async with self._lock:
-                self._pending.pop(key, None)
+            if not fut.done():
+                fut.set_exception(exc)
+                # mark retrieved so a waiter-less failure doesn't emit
+                # "Future exception was never retrieved" at GC time
+                fut.exception()
             raise
         else:
-            fut.set_result(value)
+            if not fut.done():
+                fut.set_result(value)
+            return value
+        finally:
             async with self._lock:
                 self._pending.pop(key, None)
-            return value

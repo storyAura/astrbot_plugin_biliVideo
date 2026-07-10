@@ -17,18 +17,17 @@ from dataclasses import dataclass, field
 
 from ..api.endpoints import search_videos
 from ..core.logging import get_logger
-from ..messaging.forward import build_video_forward_nodes
+from ..messaging.forward import build_multi_video_forward_nodes, build_video_forward_nodes
 from ..services import BiliVideoServices
 
 logger = get_logger("BiliVideo/Tools")
 
 try:  # pragma: no cover - depends on installed AstrBot version
     from astrbot.api.event import MessageChain  # type: ignore[import]
-    from astrbot.api.message_components import Image, Node, Nodes, Plain  # type: ignore[import]
     from astrbot.core.agent.tool import FunctionTool  # type: ignore[import]
 except Exception:
     FunctionTool = None  # type: ignore[assignment]
-    Image = Node = Nodes = Plain = MessageChain = None  # type: ignore[assignment]
+    MessageChain = None  # type: ignore[assignment]
 
 
 def register_ai_tools(services: BiliVideoServices, astrbot_context: object) -> None:
@@ -313,49 +312,19 @@ async def _send_combined_summary(
 
     from ..handlers._render_helper import render_note_components  # avoid circular import at top
 
-    rendered = render_note_components(services, note_text)
+    rendered = await render_note_components(services, note_text)
     umo = getattr(event, "unified_msg_origin", "")
 
     if services.config.enable_forward_message and successful and successful[0].info is not None:
         try:
             if len(successful) > 1:
-                # multi-video forward: build node list directly
-                nodes = []
-                bot_name = services.config.forward_bot_name
-                bot_uin = services.config.forward_bot_uin
-                nodes.append(
-                    Node(
-                        content=[Plain(f"📝 搜索结果总结(共 {len(successful)} 个视频)")],
-                        name=bot_name,
-                        uin=bot_uin,
-                    )
+                forward = build_multi_video_forward_nodes(
+                    [v.info for v in successful if v.info is not None],
+                    rendered,
+                    bot_name=services.config.forward_bot_name,
+                    bot_uin=services.config.forward_bot_uin,
+                    header=f"📝 搜索结果总结(共 {len(successful)} 个视频)",
                 )
-                for i, v in enumerate(successful, start=1):
-                    info = v.info
-                    parts = []
-                    if info.normalized_pic:
-                        parts.append(Image.fromURL(info.normalized_pic))
-                    parts.append(
-                        Plain(
-                            f"📺 视频 {i}: {info.title}\n"
-                            f"👤 UP主: {info.owner_name}\n"
-                            f"🔗 {info.url}"
-                        )
-                    )
-                    nodes.append(Node(content=parts, name=bot_name, uin=bot_uin))
-                if isinstance(rendered, list):
-                    for j, comp in enumerate(rendered):
-                        label = "📝 AI 综合总结" if j == 0 else f"📝 AI 综合总结(第 {j + 1} 页)"
-                        nodes.append(Node(content=[Plain(label), comp], name=bot_name, uin=bot_uin))
-                else:
-                    nodes.append(
-                        Node(
-                            content=[Plain(f"📝 AI 综合总结\n\n{rendered}")],
-                            name=bot_name,
-                            uin=bot_uin,
-                        )
-                    )
-                forward = Nodes(nodes=nodes)
             else:
                 forward = build_video_forward_nodes(
                     successful[0].info,

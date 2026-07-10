@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from collections.abc import AsyncIterator
 
+from .. import __version__
 from ..api.endpoints import clear_video_info_cache, video_info_cache_size
 from ..api.wbi import clear_wbi_cache
 from ..core.logging import get_logger
@@ -58,7 +59,7 @@ async def handle_status(services: BiliVideoServices, event: object) -> AsyncIter
     body = (
         "🩺 biliVideo 状态\n"
         "━━━━━━━━━━━━━━━━━━━\n"
-        f"📌 版本: 2.0.0\n"
+        f"📌 版本: {__version__}\n"
         f"🔐 登录: {cookie_state}\n"
         f"🤖 LLM: {cfg.llm_provider} / {llm_state}\n"
         f"🎨 渲染后端: {backends}\n"

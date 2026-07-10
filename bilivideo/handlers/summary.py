@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from ..access.control import is_allowed
 from ..api.endpoints import get_latest_videos, search_uploader_by_name
 from ..core.exceptions import BiliVideoError
 from ..core.logging import get_logger
@@ -20,17 +19,13 @@ from ..parsing.url_extractor import (
 from ..services import BiliVideoServices
 from ._render_helper import render_note_components
 from ._send_helper import yield_note_response
-from ._utils import parse_command_args
+from ._utils import parse_command_args, require_access
 
 logger = get_logger("BiliVideo/SummaryHandler")
 
 
+@require_access
 async def handle_summary(services: BiliVideoServices, event: object) -> AsyncIterator[object]:
-    origin = getattr(event, "unified_msg_origin", "")
-    if not is_allowed(origin, config=services.config):
-        yield event.plain_result("⛔ 你没有权限使用此插件")  # type: ignore[attr-defined]
-        return
-
     cooldown_key = f"sum:{getattr(event, 'get_sender_id', lambda: '')()}"
     remaining = services.cooldown.remaining(cooldown_key)
     if remaining > 0:
@@ -70,16 +65,13 @@ async def handle_summary(services: BiliVideoServices, event: object) -> AsyncIte
         yield event.plain_result(exc.user_message)  # type: ignore[attr-defined]
         return
 
-    components = render_note_components(services, note.markdown)
+    components = await render_note_components(services, note.markdown)
     async for resp in yield_note_response(services, event, components, video_info=note.video_info):
         yield resp
 
 
+@require_access
 async def handle_latest_video(services: BiliVideoServices, event: object) -> AsyncIterator[object]:
-    if not is_allowed(getattr(event, "unified_msg_origin", ""), config=services.config):
-        yield event.plain_result("⛔ 你没有权限使用此插件")  # type: ignore[attr-defined]
-        return
-
     args = parse_command_args(getattr(event, "message_str", "") or "")
     if not args:
         yield event.plain_result(  # type: ignore[attr-defined]
@@ -122,7 +114,7 @@ async def handle_latest_video(services: BiliVideoServices, event: object) -> Asy
         yield event.plain_result(exc.user_message)  # type: ignore[attr-defined]
         return
 
-    components = render_note_components(services, note.markdown)
+    components = await render_note_components(services, note.markdown)
     async for resp in yield_note_response(services, event, components, video_info=note.video_info):
         yield resp
 
@@ -138,12 +130,12 @@ def _is_platform_supported(video_url: str, *, enable_multi_platform: bool) -> bo
 
 
 def _extract_video_url(raw_msg: str, event: object) -> str:
-    # 辅助递归函数：从消息链组件中提取视频 URL
+    # 辅助递归函数: 从消息链组件中提取视频 URL
     def _extract_from_chain(chain) -> str | None:
         if not chain:
             return None
         for comp in chain:
-            # 处理 Reply 段：深入其内部的 chain
+            # 处理 Reply 段: 深入其内部的 chain
             if hasattr(comp, "chain") and comp.chain:
                 result = _extract_from_chain(comp.chain)
                 if result:
@@ -159,7 +151,7 @@ def _extract_video_url(raw_msg: str, event: object) -> str:
                 bvid = extract_bvid(text)
                 if bvid:
                     return f"https://www.bilibili.com/video/{bvid}"
-            # 处理 Json 段（QQ 小程序卡片）
+            # 处理 Json 段 (QQ 小程序卡片)
             if hasattr(comp, "data") and isinstance(comp.data, dict):
                 data = comp.data
                 # B站卡片典型路径
@@ -170,10 +162,10 @@ def _extract_video_url(raw_msg: str, event: object) -> str:
                         return qqdocurl  # 后续会被 _canonicalize_video_url 处理
                 except Exception:
                     pass
-                # 备用：直接找 url 字段
+                # 备用: 直接找 url 字段
                 if "url" in data and isinstance(data["url"], str):
                     return data["url"]
-            # 如果 comp 本身是字符串（某些框架下）
+            # 如果 comp 本身是字符串 (某些框架下)
             if isinstance(comp, str):
                 url = (extract_long_url(comp) or extract_short_url(comp) or 
                        extract_url(comp))
@@ -188,7 +180,7 @@ def _extract_video_url(raw_msg: str, event: object) -> str:
     message_obj = getattr(event, "message_obj", None)
     if message_obj is not None:
         chain = getattr(message_obj, "message", None) or []
-        # 新增：优先从消息链中直接提取 URL
+        # 新增: 优先从消息链中直接提取 URL
         direct_url = _extract_from_chain(chain)
         if direct_url:
             return direct_url

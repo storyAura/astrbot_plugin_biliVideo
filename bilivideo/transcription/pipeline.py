@@ -73,46 +73,61 @@ class TranscriptPipeline:
                 return PipelineOutput(transcript=transcript, audio=None)
             logger.info("no platform subtitle, fall back to ASR")
 
+        download_cancel = threading.Event()
         try:
             audio_meta = await asyncio.wait_for(
                 loop.run_in_executor(
-                    None, lambda: self._downloader.download_audio(video_url, quality=quality)
+                    None,
+                    lambda: self._downloader.download_audio(
+                        video_url, quality=quality, cancel_event=download_cancel
+                    ),
                 ),
                 timeout=AUDIO_DOWNLOAD_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError as exc:
+            download_cancel.set()
             raise BiliVideoError(
                 f"audio download timed out after {AUDIO_DOWNLOAD_TIMEOUT_SECONDS}s",
                 user_message="❌ 音频下载超时(视频较长或 B 站访问慢)",
             ) from exc
+        except asyncio.CancelledError:
+            download_cancel.set()
+            raise
 
-        if not prefer_subtitle:
-            transcript = await loop.run_in_executor(
-                None,
-                lambda: self._downloader.download_subtitles(video_url, langs=subtitle_langs),
-            )
-
-        if transcript is None or not transcript.has_content:
-            cancel_event = threading.Event()
-            try:
-                transcript = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None, self._transcriber.transcribe, audio_meta.file_path, cancel_event
-                    ),
-                    timeout=ASR_TIMEOUT_SECONDS,
+        # From here on the audio file exists on disk. Every failure path must
+        # delete it, otherwise ASR timeouts/errors leak one file per attempt;
+        # on success the caller owns cleanup (after the LLM step finishes).
+        try:
+            if not prefer_subtitle:
+                transcript = await loop.run_in_executor(
+                    None,
+                    lambda: self._downloader.download_subtitles(video_url, langs=subtitle_langs),
                 )
-            except asyncio.TimeoutError as exc:
-                cancel_event.set()
-                raise BiliVideoError(
-                    f"ASR timed out after {ASR_TIMEOUT_SECONDS}s",
-                    user_message="❌ 语音转写(ASR)超时(视频较长或转写服务繁忙)",
-                ) from exc
-            except asyncio.CancelledError:
-                cancel_event.set()
-                raise
 
-        if transcript is None or not transcript.has_content:
-            raise TranscriptionError("subtitle and BCut both yielded empty transcripts")
+            if transcript is None or not transcript.has_content:
+                cancel_event = threading.Event()
+                try:
+                    transcript = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None, self._transcriber.transcribe, audio_meta.file_path, cancel_event
+                        ),
+                        timeout=ASR_TIMEOUT_SECONDS,
+                    )
+                except asyncio.TimeoutError as exc:
+                    cancel_event.set()
+                    raise BiliVideoError(
+                        f"ASR timed out after {ASR_TIMEOUT_SECONDS}s",
+                        user_message="❌ 语音转写(ASR)超时(视频较长或转写服务繁忙)",
+                    ) from exc
+                except asyncio.CancelledError:
+                    cancel_event.set()
+                    raise
+
+            if transcript is None or not transcript.has_content:
+                raise TranscriptionError("subtitle and BCut both yielded empty transcripts")
+        except BaseException:
+            self.cleanup_audio(audio_meta)
+            raise
 
         return PipelineOutput(transcript=transcript, audio=audio_meta)
 

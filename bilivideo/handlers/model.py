@@ -10,18 +10,14 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from ..access.control import is_allowed
 from ..services import BiliVideoServices
-from ._utils import parse_command_args
+from ._utils import parse_command_args, require_access
 
 _RESET_TOKENS = {"默认", "默認", "default", "reset", "清除", "auto"}
 
 
+@require_access
 async def handle_model(services: BiliVideoServices, event: object) -> AsyncIterator[object]:
-    if not is_allowed(getattr(event, "unified_msg_origin", ""), config=services.config):
-        yield event.plain_result("⛔ 你没有权限使用此插件")  # type: ignore[attr-defined]
-        return
-
     if services.config.is_openai_compatible:
         yield event.plain_result(  # type: ignore[attr-defined]
             "ℹ️ 当前为 openai_compatible 模式,/总结模型 仅在 astrbot 模式可用。\n"

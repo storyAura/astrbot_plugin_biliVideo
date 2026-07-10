@@ -204,9 +204,10 @@ def wrap_chapters_in_cards(html: str) -> str:
 _BASE_CSS = """
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans SC','Hiragino Sans GB',sans-serif;
-     background:#1a1b2e;color:#c9cedc;width:__WIDTH__px;line-height:1.85;font-size:15px}
+     background:#1a1b2e;color:#c9cedc;width:__WIDTH__px;line-height:1.85;font-size:15px;
+     overflow-wrap:anywhere;word-wrap:break-word;word-break:break-word}
 .header{background:linear-gradient(135deg,#1e2140 0%,#252250 30%,#1a2744 70%,#1e2140 100%);
-        padding:40px 56px 32px;border-bottom:2px solid rgba(139,92,246,.25);position:relative;
+        padding:36px 36px 28px;border-bottom:2px solid rgba(139,92,246,.25);position:relative;
         overflow:hidden;text-align:center}
 .header::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;
         background:radial-gradient(ellipse at 70% 0%,rgba(96,165,250,.14) 0%,transparent 55%),
@@ -216,13 +217,13 @@ body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans SC','Hiragino Sans G
            line-height:1.4;letter-spacing:.5px;max-width:90%}
 .header-line{position:relative;z-index:1;width:80px;height:3px;margin:14px auto 0;
              background:linear-gradient(90deg,#60a5fa,#8b5cf6);border-radius:2px}
-.content{padding:28px 40px 20px}
+.content{padding:24px 30px 18px;overflow-wrap:anywhere;word-wrap:break-word;word-break:break-word}
 .content::after{content:'';display:block;clear:both}
 .card,.card-intro{background:rgba(30,33,64,.82);border-radius:12px;
                    border:1px solid rgba(148,163,184,.08);border-left:4px solid #60a5fa;
                    padding:20px 24px;box-shadow:0 2px 8px rgba(0,0,0,.25);
-                   float:left;width:48%;margin:0 1% 20px}
-.card-intro{float:none;width:98%;clear:both;border-left-color:#a5f3c4;background:rgba(52,211,153,.10)}
+                   float:none;width:100%;clear:both;margin:0 0 18px}
+.card-intro{border-left-color:#a5f3c4;background:rgba(52,211,153,.10)}
 h1{font-size:22px;font-weight:700;color:#e2e8f0;margin-bottom:12px}
 h2{font-size:16px;font-weight:700;color:#e2e8f0;margin:-20px -24px 14px;padding:12px 24px 10px;
    border-radius:12px 12px 0 0;background:rgba(0,0,0,.18);
@@ -233,7 +234,10 @@ h2::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50
 h3{font-size:15px;font-weight:700;color:#93c5fd;margin-top:16px;margin-bottom:8px;
    padding-left:12px;border-left:3px solid rgba(96,165,250,.4)}
 h4,h5,h6{font-size:14px;font-weight:600;color:#c4b5fd;margin-top:12px;margin-bottom:6px}
-p{margin-bottom:10px;text-align:justify;word-break:break-word;font-size:14px}
+p{margin-bottom:10px;text-align:justify;word-break:break-word;word-wrap:break-word;
+  overflow-wrap:anywhere;font-size:14px}
+a{color:#93c5fd;overflow-wrap:anywhere;word-wrap:break-word;word-break:break-word}
+img{max-width:100%;height:auto;display:block}
 strong{color:#f9a8d4;font-weight:700}
 em{color:#67e8f9;font-style:italic}
 .ts{display:inline-block;background:rgba(251,146,60,.15);color:#fb923c;font-weight:700;
@@ -247,19 +251,22 @@ blockquote{background:rgba(139,92,246,.08);border-left:3px solid #8b5cf6;
            box-shadow:0 2px 6px rgba(139,92,246,.08)}
 blockquote p{margin-bottom:4px}
 code{background:rgba(248,113,113,.1);color:#fca5a5;padding:2px 6px;border-radius:6px;
-     font-size:13px;font-family:'JetBrains Mono',monospace}
+     font-size:13px;font-family:'JetBrains Mono',monospace;white-space:pre-wrap;
+     overflow-wrap:anywhere;word-wrap:break-word;word-break:break-word}
 pre{background:#12132a;color:#e2e8f0;padding:12px 16px;border-radius:10px;margin:10px 0;
     font-size:13px;line-height:1.5;border:1px solid rgba(148,163,184,.1);
-    box-shadow:inset 0 1px 4px rgba(0,0,0,.3)}
-pre code{background:transparent;color:inherit;padding:0}
+    box-shadow:inset 0 1px 4px rgba(0,0,0,.3);white-space:pre-wrap;
+    overflow-wrap:anywhere;word-wrap:break-word;word-break:break-word}
+pre code{background:transparent;color:inherit;padding:0;white-space:pre-wrap}
 hr{border:none;height:1px;
    background:linear-gradient(to right,transparent,rgba(148,163,184,.2),transparent);margin:16px 0}
-table{width:100%;border-collapse:collapse;margin:10px 0;border-radius:8px;overflow:hidden}
+table{width:100%;table-layout:fixed;border-collapse:collapse;margin:10px 0;border-radius:8px;overflow:hidden}
 th{background:rgba(96,165,250,.12);color:#93c5fd;font-weight:700;padding:8px 12px;
    text-align:left;border-bottom:2px solid rgba(96,165,250,.2);font-size:14px}
 td{padding:6px 12px;border-bottom:1px solid rgba(148,163,184,.08);font-size:14px}
+th,td{overflow-wrap:anywhere;word-wrap:break-word;word-break:break-word}
 tr:nth-child(even) td{background:rgba(148,163,184,.03)}
-.footer{padding:14px 40px;border-top:1px solid rgba(148,163,184,.1);background:rgba(0,0,0,.1)}
+.footer{padding:12px 30px;border-top:1px solid rgba(148,163,184,.1);background:rgba(0,0,0,.1)}
 .footer::after{content:'';display:block;clear:both}
 .ftxt{float:left;font-size:11px;color:#64748b;letter-spacing:.8px;font-family:'JetBrains Mono',monospace}
 .ftxt .br{color:#94a3b8;font-weight:600}
@@ -272,7 +279,7 @@ def build_full_html(
     *,
     title_text: str,
     footer_time: str,
-    width: int = 1400,
+    width: int = 900,
 ) -> str:
     css = _BASE_CSS.replace("__WIDTH__", str(width))
     fonts = _build_font_faces()

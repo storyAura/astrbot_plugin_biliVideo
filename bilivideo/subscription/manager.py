@@ -48,6 +48,11 @@ class SubscriptionManager:
     def __init__(self, data_dir: str) -> None:
         self._store = JsonStore(f"{data_dir.rstrip('/')}/subscriptions.json", default=_DEFAULT)
 
+    def close(self) -> None:
+        """Refuse further writes; called on plugin shutdown/hot-reload."""
+
+        self._store.close()
+
     # ------------------------------------------------------------------
     # subscriptions
     # ------------------------------------------------------------------
@@ -88,6 +93,13 @@ class SubscriptionManager:
         data = await self._store.read()
         entry = data.get("subscriptions", {}).get(origin) or {}
         return [Subscription.from_mapping(up) for up in entry.get("up_list", [])]
+
+    async def get_subscription(self, origin: str, mid: str) -> Subscription | None:
+        """Fresh single-subscription read; push paths re-check state under lock."""
+        for sub in await self.get_subscriptions(origin):
+            if sub.mid == mid:
+                return sub
+        return None
 
     async def get_subscription_count(self, origin: str) -> int:
         return len(await self.get_subscriptions(origin))

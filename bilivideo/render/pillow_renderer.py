@@ -17,8 +17,10 @@ Notable simplifications vs. the HTML renderer:
 
 from __future__ import annotations
 
+import functools
 import os
 import re
+import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -80,6 +82,7 @@ _FALLBACK_FONT_CANDIDATES: tuple[str, ...] = (
 )
 
 
+@functools.lru_cache(maxsize=1)
 def _find_cjk_font() -> str | None:
     for candidate in _CJK_FONT_CANDIDATES:
         if os.path.exists(candidate):
@@ -87,6 +90,7 @@ def _find_cjk_font() -> str | None:
     return None
 
 
+@functools.lru_cache(maxsize=1)
 def _find_fallback_font() -> str | None:
     for candidate in _FALLBACK_FONT_CANDIDATES:
         if os.path.exists(candidate):
@@ -125,15 +129,30 @@ def check_pillow_ready() -> tuple[bool, str]:
     return True, f"fallback_font={fallback_path}; no CJK font discovered"
 
 
+# FreeTypeFont objects are not safe to share across threads, so loaded fonts
+# are cached per-thread keyed by (path, size).
+_FONT_CACHE = threading.local()
+
+
 def _load_font(size: int):
     from PIL import ImageFont
 
     font_path = _find_cjk_font() or _find_fallback_font()
     if font_path is not None:
+        cache: dict = getattr(_FONT_CACHE, "fonts", None)
+        if cache is None:
+            cache = {}
+            _FONT_CACHE.fonts = cache
+        cached = cache.get((font_path, size))
+        if cached is not None:
+            return cached, font_path
         try:
-            return ImageFont.truetype(font_path, size), font_path
+            font = ImageFont.truetype(font_path, size)
         except Exception as exc:
             logger.warning(f"font load failed ({font_path}): {exc}; using Pillow default")
+        else:
+            cache[(font_path, size)] = font
+            return font, font_path
     return ImageFont.load_default(), "Pillow default"
 
 
@@ -257,7 +276,7 @@ class PillowRenderer:
     SUBSECTION_INDENT = 16
     FOOTER_H = 56
 
-    def __init__(self, *, output_dir: str | Path, image_width: int = 1400) -> None:
+    def __init__(self, *, output_dir: str | Path, image_width: int = 900) -> None:
         self._output_dir = Path(output_dir)
         self._output_dir.mkdir(parents=True, exist_ok=True)
         self._width = image_width
@@ -529,21 +548,24 @@ class PillowRenderer:
         if not text:
             return [""]
 
+        # Accumulate per-character advance widths instead of re-measuring the
+        # whole accumulated string each iteration (which is O(n²) and dominates
+        # render time for long summaries).
         lines: list[str] = []
         current = ""
+        current_w = 0.0
         for ch in text:
-            test = current + ch
             try:
-                bbox = font.getbbox(test)
-                width = bbox[2] - bbox[0]
+                ch_w = font.getlength(ch)
             except Exception:
-                width = len(test) * (font.size // 2)
-            if width <= max_width:
-                current = test
-                continue
-            if current:
+                ch_w = font.size // 2
+            if current and current_w + ch_w > max_width:
                 lines.append(current)
-            current = ch
+                current = ch
+                current_w = ch_w
+            else:
+                current += ch
+                current_w += ch_w
         if current:
             lines.append(current)
         return lines or [""]

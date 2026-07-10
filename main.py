@@ -9,6 +9,7 @@ inside the `bilivideo` sub-package.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 
 from astrbot.api import logger
@@ -158,11 +159,16 @@ class BiliVideoPlugin(Star):
         async for resp in handlers.handle_check_updates(self._services, event):
             yield resp
 
+    # Push-target management mutates a GLOBAL push list (the bot will start
+    # pushing summaries into whatever group/user gets registered), so these
+    # three commands are restricted to bot admins.
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("添加推送群", alias={"addpg", "add_push_group"})
     async def cmd_add_push_group(self, event: AstrMessageEvent) -> AsyncIterator[object]:
         async for resp in handlers.handle_add_push_group(self._services, event):
             yield resp
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("添加推送号", alias={"addpu", "add_push_user"})
     async def cmd_add_push_user(self, event: AstrMessageEvent) -> AsyncIterator[object]:
         async for resp in handlers.handle_add_push_user(self._services, event):
@@ -173,6 +179,7 @@ class BiliVideoPlugin(Star):
         async for resp in handlers.handle_list_push(self._services, event):
             yield resp
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("移除推送", alias={"rmpush", "remove_push", "删除推送"})
     async def cmd_remove_push(self, event: AstrMessageEvent) -> AsyncIterator[object]:
         async for resp in handlers.handle_remove_push(self._services, event):
@@ -186,5 +193,11 @@ class BiliVideoPlugin(Star):
     # ────────────────────── lifecycle ───────────────────────
 
     async def terminate(self) -> None:
+        # Stop the seed task first: on hot-reload a still-running seed from
+        # the old instance would race the new instance's JsonStore and could
+        # overwrite freshly written subscription data with stale state.
+        self._seed_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await self._seed_task
         await self._services.shutdown()
         logger.info("BiliVideo plugin terminated")

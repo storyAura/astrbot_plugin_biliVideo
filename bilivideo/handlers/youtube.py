@@ -11,9 +11,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from ..access.control import is_allowed
 from ..services import BiliVideoServices
-from ._utils import parse_command_args
+from ._utils import parse_command_args, require_access
 
 
 def _instructions(services: BiliVideoServices) -> str:
@@ -43,11 +42,8 @@ def _instructions(services: BiliVideoServices) -> str:
     )
 
 
+@require_access
 async def handle_youtube_login(services: BiliVideoServices, event: object) -> AsyncIterator[object]:
-    if not is_allowed(getattr(event, "unified_msg_origin", ""), config=services.config):
-        yield event.plain_result("⛔ 你没有权限使用此插件")  # type: ignore[attr-defined]
-        return
-
     payload = parse_command_args(getattr(event, "message_str", "") or "")
     if not payload:
         yield event.plain_result(_instructions(services))  # type: ignore[attr-defined]
@@ -68,11 +64,8 @@ async def handle_youtube_login(services: BiliVideoServices, event: object) -> As
         )
 
 
+@require_access
 async def handle_youtube_logout(services: BiliVideoServices, event: object) -> AsyncIterator[object]:
-    if not is_allowed(getattr(event, "unified_msg_origin", ""), config=services.config):
-        yield event.plain_result("⛔ 你没有权限使用此插件")  # type: ignore[attr-defined]
-        return
-
     if not services.youtube_cookies.has():
         yield event.plain_result("ℹ️ 当前没有保存 YouTube cookies")  # type: ignore[attr-defined]
         return

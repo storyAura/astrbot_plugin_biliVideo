@@ -1,7 +1,8 @@
 [project]
 name = "astrbot_plugin_biliVideo"
 description = "Masterpiece-grade Bilibili video summarization plugin for AstrBot"
-version = "2.0.0"
+# Version is single-sourced from metadata.yaml via bilivideo.__version__.
+dynamic = ["version"]
 requires-python = ">=3.10"
 license = { text = "MIT" }
 readme = "README.md"
@@ -53,6 +54,9 @@ asyncio_mode = "auto"
 
 [tool.setuptools.packages.find]
 include = ["bilivideo*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "bilivideo.__version__" }
 
 [tool.mypy]
 python_version = "3.10"

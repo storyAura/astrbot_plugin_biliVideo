@@ -4,7 +4,62 @@ All notable changes to this plugin are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v2.0.0 — Architecture refresh
+## v2.0.1 (2026-07-11) — Concurrency & robustness fixes
+
+> Bug-fix release: no new commands or config keys; fully backward-compatible.
+
+### Added
+
+- QQ mini-app card links inside quoted messages are now parsed by `/总结`:
+  the message chain is walked recursively (Reply → Json segments) and the
+  card's `qqdocurl` is extracted directly
+  ([#24](https://github.com/storyAura/astrbot_plugin_biliVideo/pull/24),
+  thanks [@pheasantgogogo](https://github.com/pheasantgogogo)).
+
+### Fixed
+
+- A new video can no longer be pushed twice when a manual `/检查更新` runs
+  concurrently with the scheduled push loop: both paths share a
+  per-`(origin, mid)` lock (`KeyedLocks`) and re-read `last_bvid` under it
+  before deciding to push. The manual check claims the video inside the
+  lock and runs the slow summary generation outside it, so it never stalls
+  the scheduled loop and never yields while holding the lock.
+- `JsonStore` persistence failures are no longer swallowed: a failed write
+  rolls back the in-memory state and propagates, subscription/push-target
+  commands report the failure to the user, and the blocking
+  write+`fsync`+rename runs in a worker thread instead of on the event loop.
+  Writes orphaned by task cancellation are sequence-guarded so they can
+  never clobber a newer write, and `shutdown()` closes the store so a stale
+  hot-reloaded instance can't dump its old snapshot over fresh data.
+- Rendering no longer blocks the event loop: `render_note_components` is
+  async and offloads wkhtmltoimage / Pillow work via `asyncio.to_thread`.
+- Waiter cancellation no longer poisons shared futures in
+  `InflightDeduper`/`LRUTTLCache` (waiters use `asyncio.shield`; keys are
+  always cleaned up).
+- Access control matches whole origin segments (group `10000` no longer
+  matches `910000`); `添加推送群`/`添加推送号`/`移除推送` are admin-only.
+- The transcription pipeline cleans up audio/subtitle files on every
+  failure path; downloads and BCut uploads honour cooperative cancellation
+  after timeout.
+
+### Changed
+
+- The 15 inline `is_allowed` permission checks collapsed into a
+  `@require_access` decorator; dead `CooldownError`/`AccessDeniedError`
+  exceptions removed.
+- Forward-message `Nodes` building is unified in `messaging/forward.py`
+  (`build_video_forward_nodes` gained `header=`, new
+  `build_multi_video_forward_nodes`); the scheduled push and the AI search
+  tool no longer hand-roll node lists.
+- Config defaults are single-sourced from the dataclass field defaults;
+  the plugin version is single-sourced from `metadata.yaml`
+  (`__version__` parses it, `/总结状态` displays it, `pyproject.toml` uses
+  a dynamic version, and `MANIFEST.in` ships the yaml in sdists).
+- WBI signing reuses the shared HTTP connection pool
+  (`sign_params(params, client=client)`) instead of creating a throwaway
+  session per nav fetch, gaining the client's retry logic.
+
+## v2.0.0 (2026-06-03) — Architecture refresh
 
 > Major refactor. **Backward-compatible** for end users (commands and
 > config keys preserved) but a complete restructure under the hood.

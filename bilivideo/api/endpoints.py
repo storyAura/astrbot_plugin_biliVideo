@@ -94,7 +94,7 @@ async def get_video_info(client: BilibiliHTTPClient, bvid: str) -> VideoInfo:
 
 
 async def get_uploader_info(client: BilibiliHTTPClient, mid: str) -> UploaderInfo | None:
-    signed = await sign_params({"mid": mid}, cookies=client.cookies)
+    signed = await sign_params({"mid": mid}, client=client)
     if "w_rid" not in signed:
         logger.warning(f"get_uploader_info({mid}) skipped: WBI signing unavailable")
         return None
@@ -116,7 +116,7 @@ async def get_latest_videos(
     client: BilibiliHTTPClient, mid: str, *, count: int = 5
 ) -> list[LatestVideo]:
     params = {"mid": mid, "ps": count, "pn": 1, "order": "pubdate"}
-    signed = await sign_params(params, cookies=client.cookies)
+    signed = await sign_params(params, client=client)
     if "w_rid" not in signed:
         logger.warning(f"get_latest_videos({mid}) skipped: WBI signing unavailable")
         return []
@@ -153,7 +153,7 @@ async def search_uploader_by_name(
         "order": "fans",
         "order_sort": 0,
     }
-    signed = await sign_params(params, cookies=client.cookies)
+    signed = await sign_params(params, client=client)
 
     endpoint_candidates = (
         ((ENDPOINT_SEARCH_TYPE_WBI, signed), (ENDPOINT_SEARCH_TYPE, params))
@@ -205,7 +205,7 @@ async def search_videos(
         "duration": duration,
         "tids": tids,
     }
-    signed = await sign_params(params, cookies=client.cookies)
+    signed = await sign_params(params, client=client)
 
     payload: dict[str, object] | None = None
     endpoint_candidates = (

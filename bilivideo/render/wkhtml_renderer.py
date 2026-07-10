@@ -23,7 +23,7 @@ logger = get_logger("BiliVideo/Render")
 class WkHtmlRenderer:
     """Renders Markdown into one or more PNG files."""
 
-    def __init__(self, *, output_dir: str | Path, image_width: int = 1400) -> None:
+    def __init__(self, *, output_dir: str | Path, image_width: int = 900) -> None:
         self._output_dir = Path(output_dir)
         self._output_dir.mkdir(parents=True, exist_ok=True)
         self._image_width = image_width
@@ -144,7 +144,7 @@ class WkHtmlRenderer:
             raise RenderError("imgkit produced no file")
         size = destination.stat().st_size
         if size < 2048:
-            # A real 1400px-wide card PNG is always several KB; a sub-2KB file
+            # A real chat-card PNG is always several KB; a sub-2KB file
             # means a blank or clipped render — fail so the chain falls through
             # to Pillow rather than delivering an empty image.
             raise RenderError(

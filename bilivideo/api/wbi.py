@@ -8,25 +8,19 @@ by all callers and stale keys expire automatically.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import json
 import time
 import urllib.parse
 from collections.abc import Mapping
-
-import aiohttp
+from typing import TYPE_CHECKING
 
 from ..cache.lru_ttl import LRUTTLCache
-from ..core.constants import (
-    DEFAULT_REFERER,
-    DEFAULT_USER_AGENT,
-    ENDPOINT_NAV,
-    HTTP_TIMEOUT_SECONDS,
-    WBI_CACHE_TTL_SECONDS,
-)
+from ..core.constants import ENDPOINT_NAV, WBI_CACHE_TTL_SECONDS
 from ..core.exceptions import NetworkError
 from ..core.logging import get_logger
+
+if TYPE_CHECKING:
+    from .client import BilibiliHTTPClient
 
 logger = get_logger("BiliVideo/WBI")
 
@@ -52,25 +46,15 @@ def _derive_mixin_key(img_key: str, sub_key: str) -> str:
     return "".join(orig[i] for i in _MIXIN_TABLE)[:32]
 
 
-async def _fetch_mixin_key(cookies: Mapping[str, str] | None) -> str:
-    """Hit /x/web-interface/nav and derive a fresh mixin_key."""
+async def _fetch_mixin_key(client: BilibiliHTTPClient) -> str:
+    """Hit /x/web-interface/nav via the shared client and derive a fresh mixin_key.
 
-    headers = {"User-Agent": DEFAULT_USER_AGENT, "Referer": DEFAULT_REFERER}
-    if cookies:
-        cookie_str = "; ".join(f"{k}={v}" for k, v in cookies.items() if v)
-        if cookie_str:
-            headers["Cookie"] = cookie_str
+    Reuses the plugin-wide connection pool instead of a throwaway session.
+    Nav returns the wbi keys even when not logged in (with a non-zero code),
+    so the response `code` is deliberately not enforced.
+    """
 
-    timeout = aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS)
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(ENDPOINT_NAV, headers=headers) as resp:
-                if resp.status != 200:
-                    raise NetworkError(f"WBI nav HTTP {resp.status}")
-                payload = await resp.json()
-    except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError) as exc:
-        raise NetworkError(f"WBI nav network error: {exc}") from exc
-
+    payload = await client.request_json("GET", ENDPOINT_NAV, expect_code_zero=False)
     wbi_img = (payload.get("data") or {}).get("wbi_img") or {}
     img_url = wbi_img.get("img_url", "")
     sub_url = wbi_img.get("sub_url", "")
@@ -84,16 +68,16 @@ async def _fetch_mixin_key(cookies: Mapping[str, str] | None) -> str:
     return mixin
 
 
-async def get_mixin_key(cookies: Mapping[str, str] | None = None) -> str:
+async def get_mixin_key(client: BilibiliHTTPClient) -> str:
     """Return a cached mixin_key, refreshing once per TTL across coroutines."""
 
-    return await _KEY_CACHE.get_or_set(_KEY_CACHE_KEY, lambda: _fetch_mixin_key(cookies))
+    return await _KEY_CACHE.get_or_set(_KEY_CACHE_KEY, lambda: _fetch_mixin_key(client))
 
 
 async def sign_params(
     params: Mapping[str, object],
     *,
-    cookies: Mapping[str, str] | None = None,
+    client: BilibiliHTTPClient,
 ) -> dict[str, object]:
     """Return a copy of `params` augmented with `wts` and `w_rid`.
 
@@ -104,7 +88,7 @@ async def sign_params(
 
     signed: dict[str, object] = dict(params)
     try:
-        mixin_key = await get_mixin_key(cookies)
+        mixin_key = await get_mixin_key(client)
     except NetworkError as exc:
         logger.warning(f"WBI sign skipped, falling back unsigned: {exc}")
         return signed

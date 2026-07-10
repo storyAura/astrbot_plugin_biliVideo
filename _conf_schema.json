@@ -148,11 +148,11 @@
       },
       "image_width": {
         "type": "int",
-        "default": 1400,
+        "default": 900,
         "min": 800,
         "max": 2400,
         "description": "图片宽度(像素)",
-        "hint": "推荐 1200~1600"
+        "hint": "推荐 850~1000；过宽会导致 QQ/聊天窗口右侧留白或缩放异常"
       }
     }
   },

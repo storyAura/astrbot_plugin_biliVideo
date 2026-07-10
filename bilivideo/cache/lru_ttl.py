@@ -79,21 +79,29 @@ class LRUTTLCache(Generic[K, V]):
                 owner = False
 
         if not owner:
-            return await inflight
+            # shield: a cancelled waiter must not cancel the shared Future,
+            # which would poison this key for every later caller (the owner's
+            # set_result would raise InvalidStateError and skip the pop).
+            return await asyncio.shield(inflight)
 
         try:
             value = await factory()
         except BaseException as exc:
-            inflight.set_exception(exc)
-            async with self._lock:
-                self._inflight.pop(key, None)
+            if not inflight.done():
+                inflight.set_exception(exc)
+                # mark retrieved so a waiter-less failure doesn't emit
+                # "Future exception was never retrieved" at GC time
+                inflight.exception()
             raise
         else:
-            inflight.set_result(value)
+            if not inflight.done():
+                inflight.set_result(value)
             async with self._lock:
-                self._inflight.pop(key, None)
                 self._set_unlocked(key, value)
             return value
+        finally:
+            async with self._lock:
+                self._inflight.pop(key, None)
 
     # ------------------------------------------------------------------
     # internals (must hold _lock)

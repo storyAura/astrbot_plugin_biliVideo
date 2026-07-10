@@ -8,9 +8,9 @@ import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from ..access.control import is_allowed
 from ..auth.qrlogin import LoginStatus
 from ..services import BiliVideoServices
+from ._utils import require_access
 
 # Lazy import (test environments lack AstrBot)
 try:
@@ -19,11 +19,8 @@ except Exception:  # pragma: no cover
     Image = Plain = None  # type: ignore[assignment]
 
 
+@require_access
 async def handle_login(services: BiliVideoServices, event: object) -> AsyncIterator[object]:
-    if not is_allowed(getattr(event, "unified_msg_origin", ""), config=services.config):
-        yield event.plain_result("⛔ 你没有权限使用此插件")  # type: ignore[attr-defined]
-        return
-
     if services.is_logged_in():
         yield event.plain_result("✅ B站已登录,如需重新登录请先 /B站登出")  # type: ignore[attr-defined]
         return
@@ -69,11 +66,8 @@ async def handle_login(services: BiliVideoServices, event: object) -> AsyncItera
         os.remove(qr_path)
 
 
+@require_access
 async def handle_logout(services: BiliVideoServices, event: object) -> AsyncIterator[object]:
-    if not is_allowed(getattr(event, "unified_msg_origin", ""), config=services.config):
-        yield event.plain_result("⛔ 你没有权限使用此插件")  # type: ignore[attr-defined]
-        return
-
     if not services.is_logged_in():
         yield event.plain_result("ℹ️ 当前未登录B站")  # type: ignore[attr-defined]
         return

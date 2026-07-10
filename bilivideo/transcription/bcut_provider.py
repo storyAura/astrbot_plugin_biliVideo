@@ -35,6 +35,11 @@ POLL_INTERVAL_SECONDS = 1.0
 POLL_MAX_TRIES = 500
 
 
+def _check_cancelled(cancel_event: threading.Event | None) -> None:
+    if cancel_event is not None and cancel_event.is_set():
+        raise TranscriptionError("BCut transcription cancelled")
+
+
 class BCutTranscriber:
     """Synchronous wrapper around 必剪 ASR.
 
@@ -48,7 +53,8 @@ class BCutTranscriber:
     ) -> TranscriptResult:
         try:
             with requests.Session() as session:
-                payload = self._upload(session, file_path)
+                payload = self._upload(session, file_path, cancel_event)
+                _check_cancelled(cancel_event)
                 task_id = self._create_task(session, payload["download_url"])
                 data = self._await_result(session, task_id, cancel_event)
         except (requests.RequestException, json.JSONDecodeError, KeyError) as exc:
@@ -82,7 +88,12 @@ class BCutTranscriber:
     # ------------------------------------------------------------------
     # internals
     # ------------------------------------------------------------------
-    def _upload(self, session: requests.Session, file_path: str) -> dict[str, Any]:
+    def _upload(
+        self,
+        session: requests.Session,
+        file_path: str,
+        cancel_event: threading.Event | None = None,
+    ) -> dict[str, Any]:
         with open(file_path, "rb") as fp:
             data = fp.read()
         if not data:
@@ -107,6 +118,9 @@ class BCutTranscriber:
 
         etags: list[str] = []
         for clip, url in enumerate(upload_urls):
+            # Large audio means many chunks; without this check a cancelled
+            # (timed-out) task would keep uploading for minutes.
+            _check_cancelled(cancel_event)
             start = clip * per_size
             end = min((clip + 1) * per_size, len(data))
             resp = session.put(

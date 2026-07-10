@@ -119,21 +119,3 @@ class PartialRenderError(RenderError):
         self.generated_paths = generated_paths or []
         self.failed_pages = failed_pages or []
         self.page_errors = page_errors or {}
-
-
-class CooldownError(BiliVideoError):
-    """用户在冷却中。"""
-
-    def __init__(self, remaining: int) -> None:
-        super().__init__(
-            f"cooldown {remaining}s",
-            user_message=f"⏳ 操作太频繁,请等 {remaining} 秒后再试",
-        )
-        self.remaining = remaining
-
-
-class AccessDeniedError(BiliVideoError):
-    """群聊访问控制不通过。"""
-
-    def __init__(self) -> None:
-        super().__init__("access denied", user_message="⛔ 你没有权限使用此插件")

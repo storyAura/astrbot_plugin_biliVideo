@@ -8,8 +8,8 @@
 [![AstrBot](https://img.shields.io/badge/AstrBot-v4.0%2B-blueviolet)](https://astrbot.app/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.0.0-orange)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-190%20passing-success)](tests/)
+[![Version](https://img.shields.io/badge/version-2.0.1-orange)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/tests-249%20passing-success)](tests/)
 
 </div>
 
@@ -22,10 +22,12 @@ biliVideo v2.0 是一次**完全重写**的工程升级。主要目标:
 - **可维护性**:`main.py` 从 2,000 行单一巨型文件瘦身到约 160 行。所有逻辑下放到 `bilivideo/` 子包,按职责严格分层。
 - **健壮性**:HTTP 层采用共享 `aiohttp.ClientSession` + 指数退避重试;订阅文件原子写入 + `fsync`;Cookie 文件 0600 权限。
 - **响应速度**:带 TTL 的 LRU 缓存避免同一 BV 重复请求 B 站;single-flight 让多人同时粘贴同一链接只触发一次工作。
-- **可测试**:190 个 PyTest 单元/集成测试覆盖 URL 解析、分页、智能截断、订阅持久化、冷却、缓存、消息路由、渲染降级链等。
+- **可测试**:249 个 PyTest 单元/集成测试覆盖 URL 解析、分页、智能截断、订阅持久化、冷却、缓存、消息路由、渲染降级链等。
 - **类型化**:所有 API 返回 `dataclass`(`VideoInfo` / `UploaderInfo` / …),配置读取经 `PluginConfig` 校验。
 
 > 命令、配置项、行为对终端用户**完全向后兼容**。配置文件不需要改动即可升级。
+
+**v2.0.1** 是并发与健壮性修复版:手动 `/检查更新` 与定时推送不再可能重复推送同一视频(按订阅加锁);订阅数据写盘失败会回滚并提示、热重载不再可能被旧实例脏写;渲染与写盘全部移出事件循环;推送目标管理命令限制为管理员;版本号与配置默认值单一来源化。另合入引用消息中 QQ 小程序卡片的直接解析([#24](https://github.com/storyAura/astrbot_plugin_biliVideo/pull/24))。详见 [CHANGELOG](CHANGELOG.md)。
 
 ---
 
@@ -141,10 +143,10 @@ apt install -y fonts-noto-cjk    # 或 fonts-wqy-zenhei
 
 | 命令 | 说明 |
 | --- | --- |
-| `/添加推送群 <群号>` | 加入推送群列表 |
-| `/添加推送号 <QQ号>` | 加入推送私聊列表 |
+| `/添加推送群 <群号>` | 加入推送群列表(仅 bot 管理员) |
+| `/添加推送号 <QQ号>` | 加入推送私聊列表(仅 bot 管理员) |
 | `/推送列表` | 查看推送目标 |
-| `/移除推送 <id>` | 移除推送目标 |
+| `/移除推送 <id>` | 移除推送目标(仅 bot 管理员) |
 
 ### 自动识别
 
@@ -223,7 +225,7 @@ AI 自动组合调用两个工具:`bilibili_search_list` 与 `bilibili_search_do
 | `enable_forward_message` | `false` | 总结合并转发(聊天记录形式) |
 | `enable_auto_split` | `true` | 长视频自动分图 |
 | `max_cards_per_image` | `6` | 每张图最大章节卡片数 |
-| `image_width` | `1400` | 图片宽度像素 |
+| `image_width` | `900` | 图片宽度像素，推荐 850~1000 以适配聊天窗口 |
 | `user_cooldown_seconds` | `8` | 用户冷却(防刷屏) |
 | `trigger_keywords` | (默认列表) | 引用消息触发关键词,逗号分隔 |
 | `access_mode` | `blacklist` | `blacklist` / `whitelist` |
@@ -296,6 +298,7 @@ bilivideo/
 - 旧版 v1.x 的实现由 [@storyAura](https://github.com/storyAura) 维护;
   v2.0 重构在保留所有功能的前提下完成。
 - 引用消息硬拦截的 PR 灵感来自 [@Jeric-X](https://github.com/Jeric-X)。
+- 引用消息中 QQ 小程序卡片解析由 [@pheasantgogogo](https://github.com/pheasantgogogo) 贡献(#24)。
 
 ---
 

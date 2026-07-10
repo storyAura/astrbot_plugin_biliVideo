@@ -18,6 +18,13 @@ def _render(tmp_path, markdown: str, *, name: str = "note", width: int = 1400):
     return renderer._render_one(markdown, name, page_label=None, total=1)
 
 
+def test_default_renderer_width_is_chat_friendly(tmp_path) -> None:
+    renderer = PillowRenderer(output_dir=tmp_path)
+    out = renderer._render_one("# 标题\n\n## 章节\n内容", "default", page_label=None, total=1)
+    with Image.open(out[0]) as img:
+        assert img.width == 900
+
+
 def test_renders_valid_png_within_width(tmp_path) -> None:
     md = "# 测试标题\n\n## 章节一\n这是正文内容。\n\n### 小标题\n- 列表项一\n- 列表项二"
     out = _render(tmp_path, md)

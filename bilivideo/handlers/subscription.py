@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
-from ..access.control import is_allowed
 from ..api.endpoints import (
     get_latest_videos,
     get_uploader_info,
@@ -17,14 +16,13 @@ from ..parsing.url_extractor import extract_uid
 from ..services import BiliVideoServices
 from ._render_helper import render_note_components
 from ._send_helper import yield_note_response
-from ._utils import parse_command_args
+from ._utils import parse_command_args, require_access
+
+_SAVE_FAILED_MESSAGE = "❌ 订阅数据保存失败,请稍后重试"
 
 
+@require_access
 async def handle_subscribe(services: BiliVideoServices, event: object) -> AsyncIterator[object]:
-    if not is_allowed(getattr(event, "unified_msg_origin", ""), config=services.config):
-        yield event.plain_result("⛔ 你没有权限使用此插件")  # type: ignore[attr-defined]
-        return
-
     args = parse_command_args(getattr(event, "message_str", "") or "")
     if not args:
         yield event.plain_result(  # type: ignore[attr-defined]
@@ -68,11 +66,17 @@ async def handle_subscribe(services: BiliVideoServices, event: object) -> AsyncI
             if not name:
                 name = f"UP主_{mid}"
 
-    added = await services.subscription_manager.add_subscription(origin, mid, name)
+    try:
+        added = await services.subscription_manager.add_subscription(origin, mid, name)
+        if added:
+            videos = await get_latest_videos(services.http_client, mid, count=1)
+            if videos:
+                await services.subscription_manager.update_last_video(origin, mid, videos[0].bvid)
+    except OSError as exc:
+        services.logger.error(f"subscribe save failed for {mid}: {exc}")
+        yield event.plain_result(_SAVE_FAILED_MESSAGE)  # type: ignore[attr-defined]
+        return
     if added:
-        videos = await get_latest_videos(services.http_client, mid, count=1)
-        if videos:
-            await services.subscription_manager.update_last_video(origin, mid, videos[0].bvid)
         yield event.plain_result(  # type: ignore[attr-defined]
             f"✅ 已订阅 UP主【{name}】(UID:{mid})\n有新视频时将自动推送总结"
         )
@@ -80,11 +84,8 @@ async def handle_subscribe(services: BiliVideoServices, event: object) -> AsyncI
         yield event.plain_result(f"⚠️ 已经订阅了 UP主【{name}】(UID:{mid})")  # type: ignore[attr-defined]
 
 
+@require_access
 async def handle_unsubscribe(services: BiliVideoServices, event: object) -> AsyncIterator[object]:
-    if not is_allowed(getattr(event, "unified_msg_origin", ""), config=services.config):
-        yield event.plain_result("⛔ 你没有权限使用此插件")  # type: ignore[attr-defined]
-        return
-
     args = parse_command_args(getattr(event, "message_str", "") or "")
     if not args:
         yield event.plain_result(  # type: ignore[attr-defined]
@@ -104,21 +105,23 @@ async def handle_unsubscribe(services: BiliVideoServices, event: object) -> Asyn
         mid = uploader.mid
 
     origin = getattr(event, "unified_msg_origin", "")
-    removed = await services.subscription_manager.remove_subscription(origin, mid)
+    try:
+        removed = await services.subscription_manager.remove_subscription(origin, mid)
+    except OSError as exc:
+        services.logger.error(f"unsubscribe save failed for {mid}: {exc}")
+        yield event.plain_result(_SAVE_FAILED_MESSAGE)  # type: ignore[attr-defined]
+        return
     if removed:
         yield event.plain_result(f"✅ 已取消订阅 (UID:{mid})")  # type: ignore[attr-defined]
     else:
         yield event.plain_result(f"⚠️ 未找到该订阅 (UID:{mid})")  # type: ignore[attr-defined]
 
 
+@require_access
 async def handle_list_subscriptions(
     services: BiliVideoServices, event: object
 ) -> AsyncIterator[object]:
     origin = getattr(event, "unified_msg_origin", "")
-    if not is_allowed(origin, config=services.config):
-        yield event.plain_result("⛔ 你没有权限使用此插件")  # type: ignore[attr-defined]
-        return
-
     subs = await services.subscription_manager.get_subscriptions(origin)
     if not subs:
         yield event.plain_result(  # type: ignore[attr-defined]
@@ -133,13 +136,10 @@ async def handle_list_subscriptions(
     yield event.plain_result("\n".join(lines))  # type: ignore[attr-defined]
 
 
+@require_access
 async def handle_check_updates(
     services: BiliVideoServices, event: object
 ) -> AsyncIterator[object]:
-    if not is_allowed(getattr(event, "unified_msg_origin", ""), config=services.config):
-        yield event.plain_result("⛔ 你没有权限使用此插件")  # type: ignore[attr-defined]
-        return
-
     origin = getattr(event, "unified_msg_origin", "")
     subs = await services.subscription_manager.get_subscriptions(origin)
     if not subs:
@@ -153,14 +153,29 @@ async def handle_check_updates(
     found = 0
     for up in subs:
         try:
-            videos = await get_latest_videos(services.http_client, up.mid, count=1)
-            if not videos:
-                continue
-            latest = videos[0]
-            if latest.bvid == up.last_bvid:
-                continue
-            if not up.last_bvid:
-                await services.subscription_manager.update_last_video(origin, up.mid, latest.bvid)
+            # Same per-subscription lock as the scheduled push loop. The video
+            # is CLAIMED (last_bvid recorded) inside the lock so the other path
+            # can't push it too; the minutes-long generate/send runs outside
+            # the lock so a manual check never stalls the scheduled loop, and
+            # no yield happens while the lock is held.
+            latest = None
+            async with services.push_locks.acquire((origin, up.mid)):
+                fresh = await services.subscription_manager.get_subscription(origin, up.mid)
+                if fresh is None:
+                    continue
+                videos = await get_latest_videos(services.http_client, fresh.mid, count=1)
+                if not videos:
+                    continue
+                candidate = videos[0]
+                if candidate.bvid == fresh.last_bvid:
+                    continue
+                await services.subscription_manager.update_last_video(
+                    origin, fresh.mid, candidate.bvid
+                )
+                if not fresh.last_bvid:
+                    continue  # first sighting is only recorded, not pushed
+                latest = candidate
+            if latest is None:
                 continue
             found += 1
             yield event.plain_result(  # type: ignore[attr-defined]
@@ -174,19 +189,19 @@ async def handle_check_updates(
                 services.logger.warning(
                     f"manual check summary failed for {up.name} bvid={latest.bvid}: {exc}"
                 )
-                await services.subscription_manager.update_last_video(origin, up.mid, latest.bvid)
                 yield event.plain_result(  # type: ignore[attr-defined]
                     f"{exc.user_message}\n"
                     "⚠️ 已记录该视频,避免下次检查重复提醒。需要重试请手动发送 "
                     f"/总结 https://www.bilibili.com/video/{latest.bvid}"
                 )
                 continue
-            components = render_note_components(services, note.markdown)
-            async for resp in yield_note_response(services, event, components, video_info=note.video_info):
+            components = await render_note_components(services, note.markdown)
+            async for resp in yield_note_response(
+                services, event, components, video_info=note.video_info
+            ):
                 yield resp
-            await services.subscription_manager.update_last_video(origin, up.mid, latest.bvid)
             await asyncio.sleep(2)
-        except BiliVideoError as exc:
+        except (BiliVideoError, OSError) as exc:
             services.logger.warning(f"check failed for {up.name}: {exc}")
 
     if found == 0:

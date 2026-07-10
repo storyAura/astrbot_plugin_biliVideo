@@ -76,3 +76,29 @@ async def test_invalidate_and_clear() -> None:
     await cache.set("a", 2)
     await cache.clear()
     assert await cache.get("a") is None
+
+
+@pytest.mark.asyncio
+async def test_cancelled_waiter_does_not_poison_key() -> None:
+    """A waiter cancelled mid-await must not break the owner or later callers."""
+
+    cache: LRUTTLCache[str, int] = LRUTTLCache(max_size=4, ttl_seconds=60)
+    started = asyncio.Event()
+
+    async def slow_factory() -> int:
+        started.set()
+        await asyncio.sleep(0.05)
+        return 42
+
+    owner_task = asyncio.create_task(cache.get_or_set("k", slow_factory))
+    await started.wait()
+    waiter_task = asyncio.create_task(cache.get_or_set("k", slow_factory))
+    await asyncio.sleep(0)  # let the waiter attach to the shared future
+
+    waiter_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter_task
+
+    # owner still completes and caches the value
+    assert await owner_task == 42
+    assert await cache.get("k") == 42

@@ -9,8 +9,14 @@ def test_defaults() -> None:
     cfg = PluginConfig.from_mapping({})
     assert cfg.note_style == "professional"
     assert cfg.max_cards_per_image == 6
+    assert cfg.image_width == 900
     assert cfg.access_mode == "blacklist"
     assert "总结" in cfg.trigger_keywords
+
+def test_image_width_clamps_but_keeps_explicit_custom_width() -> None:
+    assert PluginConfig.from_mapping({"image_width": 1}).image_width == 800
+    assert PluginConfig.from_mapping({"image_width": 9999}).image_width == 2400
+    assert PluginConfig.from_mapping({"image_width": 1400}).image_width == 1400
 
 
 def test_invalid_enum_falls_back() -> None:
