@@ -4,6 +4,18 @@ All notable changes to this plugin are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+
+- Restored the original `wkhtmltoimage` HTML/CSS renderer as the preferred
+  backend whenever its executable is available on `PATH`.
+- Added an all-Python fallback for hosts without `wkhtmltoimage`:
+  `markdown-it-py` parses CommonMark, Matplotlib MathText renders common TeX
+  expressions, and Pillow composes the final cards. The fallback preserves
+  emphasis, inline code, links, nested lists, blockquotes, tables, inline math,
+  and display math; malformed formulas fall back to visible source text.
+
 ## v2.0.1 (2026-07-11) — Concurrency & robustness fixes
 
 > Bug-fix release: no new commands or config keys; fully backward-compatible.
@@ -32,7 +44,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   never clobber a newer write, and `shutdown()` closes the store so a stale
   hot-reloaded instance can't dump its old snapshot over fresh data.
 - Rendering no longer blocks the event loop: `render_note_components` is
-  async and offloads wkhtmltoimage / Pillow work via `asyncio.to_thread`.
+  async and offloads image work via `asyncio.to_thread`.
 - Waiter cancellation no longer poisons shared futures in
   `InflightDeduper`/`LRUTTLCache` (waiters use `asyncio.shield`; keys are
   always cleaned up).

@@ -7,6 +7,7 @@ or crash rendering are caught.
 
 from __future__ import annotations
 
+import pytest
 from PIL import Image
 
 from bilivideo.render import pillow_renderer as pr
@@ -34,6 +35,109 @@ def test_renders_valid_png_within_width(tmp_path) -> None:
     with Image.open(out[0]) as img:
         assert img.width == 1400
         assert img.height > 200
+
+
+def test_renders_markdown_styles_table_and_math(tmp_path) -> None:
+    md = r"""# Markdown 与公式
+
+## 语义渲染
+正文包含 **粗体**、*斜体*、`inline code` 和公式 $E=mc^2$。
+
+> 这是一段引用。
+
+| 项目 | 数值 |
+|---|---:|
+| 比容量 | $372\ \mathrm{mAh/g}$ |
+
+\[
+E = \frac{1}{2}mv^2
+\]
+"""
+    out = _render(tmp_path, md, name="rich")
+    with Image.open(out[0]) as img:
+        img.verify()
+    with Image.open(out[0]) as img:
+        assert img.width == 1400
+        assert img.height > 350
+
+
+def test_bad_formula_falls_back_without_losing_whole_image(tmp_path) -> None:
+    md = r"""# 标题
+
+## 章节
+合法正文。
+
+\[
+\definitely_unknown_command{x}
+\]
+"""
+    out = _render(tmp_path, md, name="bad-math")
+    with Image.open(out[0]) as img:
+        img.verify()
+
+
+def test_math_bitmap_has_visible_alpha() -> None:
+    image = pr._render_math_image(
+        r"\frac{a+b}{c}",
+        font_size=20,
+        color=(241, 245, 249),
+        max_width=600,
+    )
+    assert image.mode == "RGBA"
+    assert image.width > 0
+    assert image.getchannel("A").getbbox() is not None
+
+
+def test_plain_inline_math_uses_body_pixel_scale() -> None:
+    image = pr._render_math_image(
+        r"6000\ \mathrm{mAh}",
+        font_size=PillowRenderer.BODY_SIZE,
+        color=(241, 245, 249),
+        max_width=600,
+    )
+
+    assert image.height <= PillowRenderer.BODY_SIZE + 2
+    assert 0 < image.info["baseline_ascent"] <= image.height
+
+
+def test_math_normalizes_unsupported_full_width_punctuation() -> None:
+    assert pr._normalize_math_formula("8000、10000，12000") == r"8000,\ 10000,\ 12000"
+
+
+def test_mixed_inline_layout_reserves_ascent_and_descent(tmp_path) -> None:
+    renderer = PillowRenderer(output_dir=tmp_path)
+    body, _ = pr._load_font(PillowRenderer.BODY_SIZE)
+    mono, _ = pr._load_font(PillowRenderer.BODY_SIZE, mono=True)
+    spans = (
+        pr._InlineSpan("正文"),
+        pr._InlineSpan(r"372\ \frac{\mathrm{mAh}}{g}", kind="math"),
+        pr._InlineSpan(" 后续内容\n第二行"),
+    )
+
+    lines = renderer._layout_spans(spans, {"body": body, "mono": mono}, 800)
+
+    assert len(lines) == 2
+    for line in lines:
+        assert line.baseline >= max((run.ascent for run in line.runs), default=0)
+        assert line.height - line.baseline >= max((run.descent for run in line.runs), default=0)
+
+
+def test_inline_run_widths_use_full_font_measurement(tmp_path) -> None:
+    renderer = PillowRenderer(output_dir=tmp_path)
+    body, _ = pr._load_font(PillowRenderer.BODY_SIZE)
+    mono, _ = pr._load_font(PillowRenderer.BODY_SIZE, mono=True)
+    spans = (
+        pr._InlineSpan("Qwen3.6"),
+        pr._InlineSpan("6000 mAh", bold=True),
+        pr._InlineSpan("inline code", kind="code"),
+    )
+
+    line = renderer._layout_spans(spans, {"body": body, "mono": mono}, 800)[0]
+
+    for run in line.runs:
+        expected = renderer._text_length(run.font, run.text) + (8 if run.code else 0)
+        assert run.width == pytest.approx(expected)
+    assert line.width == pytest.approx(sum(run.width for run in line.runs))
 
 
 def test_long_title_heading_h3_do_not_crash(tmp_path) -> None:
@@ -75,7 +179,7 @@ def test_emoji_title_is_rendered_without_crash(tmp_path) -> None:
 
 
 def test_leading_timestamp_line_renders(tmp_path) -> None:
-    # Exercises the accent-colored timestamp split in _draw_line.
+    # Exercises the accent-colored timestamp split in the inline AST layout.
     md = "# 标题\n\n## 章节\n- 12:34 关键时刻说明\n- 普通要点"
     out = _render(tmp_path, md)
     with Image.open(out[0]) as img:

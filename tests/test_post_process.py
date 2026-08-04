@@ -8,7 +8,11 @@ from bilivideo.summarize.post_process import replace_timestamp_markers, smart_tr
 class TestReplaceTimestampMarkers:
     def test_bracketed(self) -> None:
         out = replace_timestamp_markers("Look at *Content-[04:16]*")
-        assert "⏱ 04:16" in out
+        assert out == "Look at ⏱ 04:16"
+
+    def test_heading_does_not_keep_trailing_emphasis_marker(self) -> None:
+        out = replace_timestamp_markers("## 章节 *Content-[00:21]*")
+        assert out == "## 章节 ⏱ 00:21"
 
     def test_unbracketed(self) -> None:
         out = replace_timestamp_markers("Content-04:16 ok")

@@ -145,8 +145,7 @@ class WkHtmlRenderer:
         size = destination.stat().st_size
         if size < 2048:
             # A real chat-card PNG is always several KB; a sub-2KB file
-            # means a blank or clipped render — fail so the chain falls through
-            # to Pillow rather than delivering an empty image.
+            # means a blank or clipped render; fail rather than delivering it.
             raise RenderError(
                 f"imgkit produced an implausibly small file ({size}B): {destination}"
             )

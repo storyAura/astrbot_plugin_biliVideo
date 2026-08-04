@@ -46,7 +46,7 @@ biliVideo v2.0 是一次**完全重写**的工程升级。主要目标:
 
 | 类别 | 特性 |
 | --- | --- |
-| 输出 | 双栏暗色卡片图片 / 纯文本回退 / 合并转发模式 |
+| 输出 | wkhtml HTML/CSS 卡片 / Python Markdown + LaTeX 后备 / 纯文本回退 / 合并转发模式 |
 | 总结 | 简洁 / 详细 / 专业 三种风格,LLM 可换 |
 | 输入 | 完整链接、短链、BV 号、UID、空间链接、UP 主昵称 |
 | 智能 | 自动识别小程序/链接/短链;**触发关键词**配置化 |
@@ -71,29 +71,21 @@ biliVideo v2.0 是一次**完全重写**的工程升级。主要目标:
 本插件**无需手动安装任何系统依赖**。AstrBot 安装插件时会自动 `pip install -r requirements.txt`,其中已包含:
 
 - **ffmpeg**:由 `imageio-ffmpeg` 提供静态二进制,无字幕视频走 ASR 转写时自动调用;系统若已装 ffmpeg 则优先用系统版。
-- **图片渲染**:内建 Noto Sans SC 中文字型(GB2312 子集,SIL OFL)+ Pillow,容器无图形环境也能出图。
+- **图片渲染**:检测到 `wkhtmltoimage` 时使用原 HTML/CSS 渲染;未检测到时自动使用 Markdown AST + MathText + Pillow 后备。内建 Noto Sans SC 中文字型(GB2312 子集,SIL OFL),容器无图形环境也能出图。
 - 装好后用 `/总结状态` 即可看到检测出的渲染后端与 ffmpeg 来源(系统 / 内建)。
 
-### 可选增强(非必须)
+### 可选增强:wkhtmltopdf HTML/CSS 渲染
 
-#### wkhtmltopdf — 更精美的图片
-
-不装也能出图(Pillow 简洁卡片版)。装了可获得双栏暗色卡片的高保真渲染:
+若系统安装的 wkhtmltopdf 同时提供 `wkhtmltoimage` 且该命令位于 `PATH`,插件会优先使用原有 HTML/CSS 高保真渲染模式。不同 Docker 基础镜像的软件源可用性不同,请使用镜像发行版支持的安装方式或兼容二进制包。
 
 ```bash
-# Ubuntu / Debian
+# 软件源提供该软件包的 Debian / Ubuntu 版本
 apt install -y wkhtmltopdf fonts-wqy-zenhei
-
-# Docker(无图形环境时配 xvfb)
-apt install -y wkhtmltopdf xvfb fonts-wqy-zenhei fonts-noto-cjk
-printf '#!/bin/bash\nxvfb-run --auto-servernum /usr/bin/wkhtmltoimage "$@"\n' > /usr/local/bin/wkhtmltoimage
-chmod +x /usr/local/bin/wkhtmltoimage
-
-# macOS
-brew install wkhtmltopdf
 ```
 
-#### 系统中文字体 — 更全的字形覆盖
+未检测到 `wkhtmltoimage` 时无需额外配置,会自动启用纯 Python 后备渲染。
+
+### 可选增强:系统中文字体
 
 内建字型为 GB2312 子集,已覆盖绝大多数简体中文。若需繁体 / 日文 / 生僻字的完整覆盖,装一个系统 CJK 字体即可(会被优先使用):
 
@@ -102,6 +94,8 @@ apt install -y fonts-noto-cjk    # 或 fonts-wqy-zenhei
 ```
 
 > 纯文本模式:把 `output_image` 设为 `false` 即可完全免图片渲染依赖。
+
+> 纯 Python 后备模式使用 Matplotlib MathText 的 TeX 子集,覆盖分数、根式、上下标、求和、积分、希腊字母和 `\text{}` 等常见总结场景;原 wkhtml 模式保持原有渲染逻辑,不额外处理 LaTeX。
 
 ---
 

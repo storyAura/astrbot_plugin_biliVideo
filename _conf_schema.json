@@ -130,7 +130,7 @@
         "type": "bool",
         "default": true,
         "description": "图片输出",
-        "hint": "开箱即用:内建中文字体 + Pillow,无需装 wkhtmltopdf;装了 wkhtmltopdf 则自动用更精美的渲染。关闭则回退纯文本"
+        "hint": "检测到 wkhtmltoimage 时使用 HTML/CSS 高保真渲染,否则使用纯 Python Markdown + LaTeX 渲染。关闭则回退纯文本"
       },
       "enable_auto_split": {
         "type": "bool",

@@ -1,4 +1,4 @@
-"""The plugin ships a CJK font subset so the Pillow fallback renders images
+"""The plugin ships a CJK font subset so the Python renderer produces images
 on a bare container (no system CJK font installed, e.g. Zeabur/Docker).
 
 These tests guard that wiring: the font is present, loads, renders real CJK
@@ -37,6 +37,10 @@ def test_pillow_ready_with_only_bundled_font(monkeypatch) -> None:
     monkeypatch.setattr(
         pr, "_CJK_FONT_CANDIDATES", ("/nonexistent/system-font.ttc", pr._BUNDLED_CJK_FONT)
     )
-    assert pr._find_cjk_font() == pr._BUNDLED_CJK_FONT
+    pr._find_cjk_font.cache_clear()
+    try:
+        assert pr._find_cjk_font() == pr._BUNDLED_CJK_FONT
+    finally:
+        pr._find_cjk_font.cache_clear()
     ready, reason = pr.check_pillow_ready()
     assert ready, reason
