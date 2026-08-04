@@ -56,6 +56,7 @@ class AstrbotProvider:
         prompt: str,
         *,
         include_ai_summary: bool,
+        style: str,
         session_id: str | None = None,
     ) -> StructuredSummaryAttempt:
         """Ask an AstrBot model for one required schema-only tool call."""
@@ -82,7 +83,10 @@ class AstrbotProvider:
                 "提交结构化视频总结。这是唯一允许的输出方式，"
                 "每个章节都必须带对应的整数秒时间戳。"
             ),
-            parameters=summary_tool_parameters(include_ai_summary=include_ai_summary),
+            parameters=summary_tool_parameters(
+                include_ai_summary=include_ai_summary,
+                style=style,
+            ),
             handler=None,
         )
         try:

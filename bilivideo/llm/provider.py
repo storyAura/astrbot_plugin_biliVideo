@@ -31,6 +31,7 @@ class StructuredSummaryProvider(Protocol):
         prompt: str,
         *,
         include_ai_summary: bool,
+        style: str,
         session_id: str | None = None,
     ) -> StructuredSummaryAttempt:
         ...

@@ -81,15 +81,18 @@ def test_rejects_decreasing_timestamps() -> None:
         parse_structured_summary(payload, max_timestamp_seconds=30, require_ai_summary=True)
 
 
-def test_rejects_nested_primary_headings() -> None:
+def test_demotes_nested_primary_headings_instead_of_rejecting() -> None:
     payload = _payload()
     chapters = payload["chapters"]
     assert isinstance(chapters, list)
     assert isinstance(chapters[0], dict)
     chapters[0]["body_markdown"] = "## 不应出现的标题"
 
-    with pytest.raises(StructuredSummaryError, match="contains h1/h2"):
-        parse_structured_summary(payload, max_timestamp_seconds=4000, require_ai_summary=True)
+    summary = parse_structured_summary(
+        payload, max_timestamp_seconds=4000, require_ai_summary=True
+    )
+
+    assert summary.chapters[0].body_markdown == "### 不应出现的标题"
 
 
 def test_schema_only_requires_ai_summary_when_enabled() -> None:
@@ -99,6 +102,121 @@ def test_schema_only_requires_ai_summary_when_enabled() -> None:
     assert "ai_summary" in enabled["required"]
     assert "ai_summary" not in disabled["required"]
     assert "ai_summary" not in disabled["properties"]
+
+
+def test_schema_applies_style_specific_chapter_constraints() -> None:
+    concise = summary_tool_parameters(include_ai_summary=False, style="concise")
+    professional = summary_tool_parameters(include_ai_summary=False, style="professional")
+    detailed = summary_tool_parameters(include_ai_summary=False, style="detailed")
+
+    assert concise["properties"]["chapters"]["maxItems"] == 8
+    assert professional["properties"]["chapters"]["maxItems"] == 12
+    assert detailed["properties"]["chapters"]["maxItems"] == 20
+    concise_body = concise["properties"]["chapters"]["items"]["properties"][
+        "body_markdown"
+    ]["description"]
+    assert "一个 Markdown 项目符号" in concise_body
+    assert "真实换行" in concise_body
+
+
+def test_style_chapter_limit_is_advisory_during_validation() -> None:
+    payload = {
+        "title": "标题",
+        "chapters": [
+            {"title": f"章节 {index}", "timestamp_seconds": index, "body_markdown": "- 要点"}
+            for index in range(21)
+        ],
+    }
+
+    summary = parse_structured_summary(
+        payload,
+        max_timestamp_seconds=30,
+        require_ai_summary=False,
+        style="detailed",
+    )
+
+    assert len(summary.chapters) == 21
+
+
+def test_rejects_only_pathological_chapter_count() -> None:
+    payload = {
+        "title": "标题",
+        "chapters": [
+            {"title": f"章节 {index}", "timestamp_seconds": index, "body_markdown": "内容"}
+            for index in range(65)
+        ],
+    }
+
+    with pytest.raises(StructuredSummaryError, match="hard 64-item safety limit"):
+        parse_structured_summary(
+            payload,
+            max_timestamp_seconds=100,
+            require_ai_summary=False,
+            style="detailed",
+        )
+
+
+@pytest.mark.parametrize("ai_summary", [None, 123, ""])
+def test_missing_or_invalid_ai_summary_does_not_discard_usable_chapters(
+    ai_summary: object,
+) -> None:
+    payload = _payload()
+    payload["ai_summary"] = ai_summary
+
+    summary = parse_structured_summary(
+        payload,
+        max_timestamp_seconds=4000,
+        require_ai_summary=True,
+        style="professional",
+    )
+
+    assert len(summary.chapters) == 2
+    assert summary.ai_summary == ""
+
+
+def test_normalizes_escaped_markdown_newlines_without_breaking_latex() -> None:
+    payload = {
+        "title": "标题",
+        "chapters": [
+            {
+                "title": "章节",
+                "timestamp_seconds": 0,
+                "body_markdown": r"- 第一项\n- 第二项包含 $\nu + \nabla f$。",
+            }
+        ],
+        "ai_summary": r"第一句。\n第二句。",
+    }
+
+    summary = parse_structured_summary(
+        payload,
+        max_timestamp_seconds=1,
+        require_ai_summary=True,
+        style="professional",
+    )
+
+    assert summary.chapters[0].body_markdown == "- 第一项\n- 第二项包含 $\\nu + \\nabla f$。"
+    assert summary.ai_summary == "第一句。\n第二句。"
+
+
+@pytest.mark.parametrize(
+    ("style", "required_text"),
+    [
+        ("concise", "一个章节只表达一个核心观点"),
+        ("professional", "每章使用 1-3 个项目符号"),
+        ("detailed", "通常组织为 2-5 个项目符号"),
+    ],
+)
+def test_prompt_uses_non_conflicting_style_constraints(style: str, required_text: str) -> None:
+    prompt = build_prompt(
+        title="标题",
+        segments=(TranscriptSegment(start=0, end=1, text="内容"),),
+        style=style,
+        structured_output=True,
+    )
+
+    assert required_text in prompt
+    assert "记录尽可能多的相关细节" not in prompt
+    assert "按模式取舍" in prompt
 
 
 def test_structured_prompt_uses_integer_seconds_without_markdown_conflict() -> None:

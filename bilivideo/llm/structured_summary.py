@@ -6,8 +6,15 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from .prompts import get_summary_style_profile
+
 SUMMARY_TOOL_NAME = "submit_video_summary"
-SUMMARY_FORMAT_VERSION = "structured-v1"
+SUMMARY_FORMAT_VERSION = "structured-v2"
+MAX_STRUCTURED_CHAPTERS = 64
+
+_ESCAPED_MARKDOWN_NEWLINE_RE = re.compile(
+    r"\\n(?=[ \t]*(?:[-+*>#](?:[ \t]|$)|\d{1,3}[.)][ \t]|[\u3400-\u9fff]|[`$]))"
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -36,9 +43,12 @@ class StructuredSummaryError(ValueError):
     """Tool arguments do not satisfy the summary contract."""
 
 
-def summary_tool_parameters(*, include_ai_summary: bool) -> dict[str, Any]:
+def summary_tool_parameters(
+    *, include_ai_summary: bool, style: str | None = None
+) -> dict[str, Any]:
     """Return the JSON Schema sent to AstrBot's single output tool."""
 
+    style_profile = get_summary_style_profile(style)
     properties: dict[str, Any] = {
         "title": {
             "type": "string",
@@ -47,7 +57,10 @@ def summary_tool_parameters(*, include_ai_summary: bool) -> dict[str, Any]:
         "chapters": {
             "type": "array",
             "minItems": 1,
-            "description": "按照视频时间顺序排列的主要章节。",
+            "maxItems": style_profile.max_chapters,
+            "description": (
+                f"按照视频时间顺序排列的主要章节。{style_profile.chapters_description}"
+            ),
             "items": {
                 "type": "object",
                 "additionalProperties": False,
@@ -64,8 +77,9 @@ def summary_tool_parameters(*, include_ai_summary: bool) -> dict[str, Any]:
                     "body_markdown": {
                         "type": "string",
                         "description": (
-                            "章节内容，可使用列表、引用、表格、加粗和 LaTeX，"
-                            "但不要再生成一级或二级标题。"
+                            f"{style_profile.body_description}可使用 Markdown 和 LaTeX，"
+                            "但不要再生成一级或二级标题；必须使用真实换行，"
+                            "禁止输出字面量 \\n 或 \\r\\n。"
                         ),
                     },
                 },
@@ -94,6 +108,7 @@ def parse_structured_summary(
     *,
     max_timestamp_seconds: int,
     require_ai_summary: bool,
+    style: str | None = None,
 ) -> StructuredSummary:
     """Validate and normalize one tool-call payload."""
 
@@ -104,8 +119,10 @@ def parse_structured_summary(
     raw_chapters = arguments.get("chapters")
     if not isinstance(raw_chapters, list) or not raw_chapters:
         raise StructuredSummaryError("chapters must be a non-empty array")
-    if len(raw_chapters) > 32:
-        raise StructuredSummaryError("chapters exceeds the 32-item limit")
+    if len(raw_chapters) > MAX_STRUCTURED_CHAPTERS:
+        raise StructuredSummaryError(
+            f"chapters exceeds the hard {MAX_STRUCTURED_CHAPTERS}-item safety limit"
+        )
 
     chapters: list[SummaryChapter] = []
     previous_timestamp = -1
@@ -126,19 +143,16 @@ def parse_structured_summary(
         body = raw_chapter.get("body_markdown")
         if not isinstance(body, str) or not body.strip():
             raise StructuredSummaryError(f"chapter {index + 1} body_markdown is empty")
-        body = body.strip()
-        if re.search(r"(?m)^ {0,3}#{1,2}\s+", body):
-            raise StructuredSummaryError(f"chapter {index + 1} body contains h1/h2 headings")
+        body = _normalize_markdown_text(body)
+        body = re.sub(r"(?m)^([ \t]{0,3})#{1,2}([ \t]+)", r"\1###\2", body)
 
         chapters.append(SummaryChapter(chapter_title, timestamp, body))
         previous_timestamp = timestamp
 
     raw_ai_summary = arguments.get("ai_summary", "")
-    if not isinstance(raw_ai_summary, str):
-        raise StructuredSummaryError("ai_summary must be a string")
-    ai_summary = raw_ai_summary.strip()
-    if require_ai_summary and not ai_summary:
-        raise StructuredSummaryError("ai_summary is required")
+    ai_summary = (
+        _normalize_markdown_text(raw_ai_summary) if isinstance(raw_ai_summary, str) else ""
+    )
 
     return StructuredSummary(title, tuple(chapters), ai_summary)
 
@@ -163,6 +177,15 @@ def _heading(value: object, label: str) -> str:
     if not cleaned:
         raise StructuredSummaryError(f"{label} is empty")
     return cleaned
+
+
+def _normalize_markdown_text(value: str) -> str:
+    """Restore double-escaped Markdown newlines without touching LaTeX commands."""
+
+    normalized = value.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = normalized.replace(r"\r\n", "\n").replace(r"\n\n", "\n\n")
+    normalized = _ESCAPED_MARKDOWN_NEWLINE_RE.sub("\n", normalized)
+    return normalized.strip()
 
 
 def _format_seconds(seconds: int) -> str:

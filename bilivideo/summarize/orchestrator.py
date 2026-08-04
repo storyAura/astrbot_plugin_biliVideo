@@ -135,21 +135,18 @@ class SummaryOrchestrator:
         structured_prompt = build_prompt(**prompt_args, structured_output=True)
 
         try:
-            markdown = await asyncio.wait_for(
-                self._request_markdown(
-                    legacy_prompt=legacy_prompt,
-                    structured_prompt=structured_prompt,
-                    max_timestamp_seconds=max(
-                        0,
-                        math.ceil(
-                            max(
-                                (segment.end for segment in output.transcript.segments),
-                                default=0,
-                            )
-                        ),
+            markdown = await self._request_markdown(
+                legacy_prompt=legacy_prompt,
+                structured_prompt=structured_prompt,
+                max_timestamp_seconds=max(
+                    0,
+                    math.ceil(
+                        max(
+                            (segment.end for segment in output.transcript.segments),
+                            default=0,
+                        )
                     ),
                 ),
-                timeout=LLM_CHAT_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError as exc:
             raise BiliVideoError(
@@ -184,10 +181,14 @@ class SummaryOrchestrator:
         max_timestamp_seconds: int,
     ) -> str:
         if self._config.enable_link and isinstance(self._llm, StructuredSummaryProvider):
-            attempt = await self._llm.chat_structured_summary(
-                structured_prompt,
-                include_ai_summary=self._config.enable_summary,
-                session_id="BiliVideo_plugin",
+            attempt = await asyncio.wait_for(
+                self._llm.chat_structured_summary(
+                    structured_prompt,
+                    include_ai_summary=self._config.enable_summary,
+                    style=self._config.note_style,
+                    session_id="BiliVideo_plugin",
+                ),
+                timeout=LLM_CHAT_TIMEOUT_SECONDS,
             )
             if attempt.arguments is not None:
                 try:
@@ -195,6 +196,7 @@ class SummaryOrchestrator:
                         attempt.arguments,
                         max_timestamp_seconds=max_timestamp_seconds,
                         require_ai_summary=self._config.enable_summary,
+                        style=self._config.note_style,
                     )
                 except StructuredSummaryError as exc:
                     logger.warning(f"structured summary rejected; using Markdown fallback: {exc}")
@@ -205,7 +207,10 @@ class SummaryOrchestrator:
                 logger.info("AstrBot returned text instead of a tool call; using it as fallback")
                 return attempt.fallback_text
 
-        return await self._llm.chat(legacy_prompt, session_id="BiliVideo_plugin")
+        return await asyncio.wait_for(
+            self._llm.chat(legacy_prompt, session_id="BiliVideo_plugin"),
+            timeout=LLM_CHAT_TIMEOUT_SECONDS,
+        )
 
     def _summary_cache_key(self, bvid: str) -> str:
         provider_identity = type(self._llm).__name__

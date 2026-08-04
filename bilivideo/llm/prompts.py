@@ -7,6 +7,8 @@ intent is preserved verbatim where it mattered.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from ..core.types import TranscriptSegment
 
 MARKDOWN_OUTPUT_INSTRUCTIONS = """\
@@ -19,7 +21,9 @@ STRUCTURED_OUTPUT_INSTRUCTIONS = """\
 输出说明:
 - 当 `submit_video_summary` 工具可用时,必须调用该工具,不要输出普通正文。
 - `timestamp_seconds` 必须复制对应转录片段的整数秒,章节必须按时间递增。
-- 如果运行环境没有提供该工具,则回退为最终 Markdown 内容,且不要包裹代码块。"""
+- `body_markdown` 中必须使用真实换行,不要输出字面量 `\\n` 或 `\\r\\n`。
+- 如果运行环境没有提供该工具,则回退为最终 Markdown 内容:第一行使用 h1,
+  后续章节使用 h2,且不要包裹代码块。"""
 
 MARKDOWN_FORMAT_INSTRUCTIONS = """\
 格式要求(非常重要):
@@ -36,6 +40,66 @@ STRUCTURED_FORMAT_INSTRUCTIONS = """\
 - `body_markdown` 可以使用列表、引用块、表格、加粗、斜体和 LaTeX,但不要包含 h1/h2。
 - 合理分段,避免单个板块内容过长。"""
 
+
+@dataclass(slots=True, frozen=True)
+class SummaryStyleProfile:
+    """One source of truth for prompt and tool-schema style constraints."""
+
+    instruction: str
+    max_chapters: int
+    chapters_description: str
+    body_description: str
+
+
+SUMMARY_STYLE_PROFILES: dict[str, SummaryStyleProfile] = {
+    "concise": SummaryStyleProfile(
+        instruction="""\
+**简洁模式(最高优先级)**:
+- 全文只保留 5-8 个核心观点;内容确实不足时可以少于 5 个,不要为了凑数重复信息。
+- 一个章节只表达一个核心观点,`body_markdown` 只写一个项目符号和一句完整的话。
+- 省略背景铺垫、过程复述、次要例子和同义重复;数据只保留直接支撑结论的部分。
+- 不得因通用的“完整性”要求扩写内容。""",
+        max_chapters=8,
+        chapters_description="最多 8 个核心观点；内容不足时可以更少，禁止凑数或重复。",
+        body_description=(
+            "只包含一个 Markdown 项目符号和一句简洁完整的话；"
+            "不得展开背景、过程、次要例子或同义重复。"
+        ),
+    ),
+    "detailed": SummaryStyleProfile(
+        instruction="""\
+**详细模式**:
+- 按视频内容顺序完整覆盖主要主题,最多使用 20 个章节。
+- 每章保留关键事实、必要例子、数据和论证过程,通常组织为 2-5 个项目符号。
+- 删除广告、口头重复和无信息量的转场,不要逐句复述转录文本。""",
+        max_chapters=20,
+        chapters_description="按视频顺序完整覆盖主要主题，最多 20 个章节。",
+        body_description=(
+            "详细说明本章内容，通常使用 2-5 个项目符号；"
+            "保留关键事实、必要例子、数据和论证过程，但不要逐句复述。"
+        ),
+    ),
+    "professional": SummaryStyleProfile(
+        instruction="""\
+**专业模式**:
+- 提炼背景、核心论点、关键数据和结论建议,最多使用 12 个章节。
+- 每章使用 1-3 个项目符号,说明事实之间的关系和结论,避免堆积转录细节。
+- 语言正式、逻辑清晰;只有影响结论的例子和数据才需要保留。""",
+        max_chapters=12,
+        chapters_description="围绕背景、核心论点、关键数据和结论组织，最多 12 个章节。",
+        body_description=(
+            "使用 1-3 个 Markdown 项目符号说明关键事实、关系和结论；"
+            "避免堆积转录细节，只保留影响结论的例子和数据。"
+        ),
+    ),
+}
+
+
+def get_summary_style_profile(style: str | None) -> SummaryStyleProfile:
+    """Return a validated style profile, defaulting to professional."""
+
+    return SUMMARY_STYLE_PROFILES.get(style or "professional", SUMMARY_STYLE_PROFILES["professional"])
+
 BASE_PROMPT = """\
 你是一个专业的总结助手,擅长将视频转录内容整理成清晰、有条理且信息丰富的总结。
 
@@ -48,6 +112,9 @@ BASE_PROMPT = """\
 
 视频标签:
 {tags}
+
+当前总结模式:
+{style_instruction}
 
 {output_instructions}
 
@@ -62,9 +129,9 @@ BASE_PROMPT = """\
 你的任务:
 根据上面的分段转录内容,生成结构化的总结,遵循以下原则:
 
-1. **完整信息**:记录尽可能多的相关细节。
+1. **按模式取舍**:严格服从当前总结模式的信息密度和章节约束,不要擅自扩写。
 2. **去除无关内容**:省略广告、填充词、问候语和不相关的言论。
-3. **保留关键细节**:保留重要事实、示例、结论和建议。
+3. **事实准确**:不得编造转录中不存在的数据、结论或因果关系。
 4. **可读布局**:必要时使用项目符号,并保持段落简短。
 5. 视频中提及的数学公式必须保留,并以 LaTeX 语法形式呈现。
 
@@ -73,25 +140,12 @@ BASE_PROMPT = """\
 
 LINK_INSTRUCTION = "9. **原片跳转**: 为每个主要章节添加时间戳,使用格式 `*Content-[mm:ss]`。"
 
-AI_SUMMARY_INSTRUCTION = "🧠 在总结末尾,添加一个专业的 **AI 总结** — 用中文简短总结整个视频。"
-
-NOTE_STYLES: dict[str, str] = {
-    "concise": (
-        "**简洁模式**: 仅提取核心观点和关键结论,每个章节用简短的要点概括。"
-        "省略细节和举例,只保留最重要的信息。整体控制在 5-8 个要点以内。"
-        "每个要点用一句话概括,使用 `## 章节标题` 来分隔不同板块。"
-    ),
-    "detailed": (
-        "**详细模式**: 完整记录视频内容,每个部分都包含详细讨论。"
-        "保留重要的例子、数据和论证过程。使用 `## 章节标题` 来分隔不同板块,"
-        "每个板块内使用列表和引用块来组织信息。需要尽可能多的记录视频内容。"
-    ),
-    "professional": (
-        "**专业模式**: 提供深度结构化分析,包含背景概述、核心论点、数据支撑和结论建议。"
-        "使用 `## 章节标题` 来分隔不同板块(如:概述、核心内容、关键数据、总结与建议)。"
-        "每个板块内使用列表、引用块和加粗来突出关键信息。语言正式、逻辑清晰。"
-    ),
-}
+AI_SUMMARY_MARKDOWN_INSTRUCTION = (
+    "🧠 在总结末尾添加 `## AI 总结`,用中文简短总结整个视频,不要重复章节内容。"
+)
+AI_SUMMARY_STRUCTURED_INSTRUCTION = (
+    "🧠 在 `ai_summary` 字段中用中文简短总结整个视频,不要添加标题或重复章节内容。"
+)
 
 
 def format_time(seconds: float) -> str:
@@ -127,6 +181,7 @@ def build_prompt(
 ) -> str:
     """Compose the final prompt sent to the LLM."""
 
+    style_profile = get_summary_style_profile(style)
     body = BASE_PROMPT.format(
         video_title=title,
         segment_text=render_segment_text(segments, include_seconds=structured_output),
@@ -142,12 +197,15 @@ def build_prompt(
         segment_format=(
             "显示时间 | 整数秒s - 内容" if structured_output else "开始时间 - 内容"
         ),
+        style_instruction=style_profile.instruction,
     )
     pieces = [body]
     if enable_link and not structured_output:
         pieces.append(LINK_INSTRUCTION)
     if enable_summary:
-        pieces.append(AI_SUMMARY_INSTRUCTION)
-    if style and style in NOTE_STYLES:
-        pieces.append(NOTE_STYLES[style])
+        pieces.append(
+            AI_SUMMARY_STRUCTURED_INSTRUCTION
+            if structured_output
+            else AI_SUMMARY_MARKDOWN_INSTRUCTION
+        )
     return "\n".join(pieces)

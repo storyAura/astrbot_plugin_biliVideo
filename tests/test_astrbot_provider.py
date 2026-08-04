@@ -151,7 +151,9 @@ async def test_structured_summary_requires_single_astrbot_tool(monkeypatch) -> N
     )
     provider = AstrbotProvider(_FakeContext(current, {}))  # type: ignore[arg-type]
 
-    attempt = await provider.chat_structured_summary("prompt", include_ai_summary=False)
+    attempt = await provider.chat_structured_summary(
+        "prompt", include_ai_summary=False, style="concise"
+    )
 
     assert attempt.arguments == payload
     assert len(current.calls) == 1
@@ -160,6 +162,7 @@ async def test_structured_summary_requires_single_astrbot_tool(monkeypatch) -> N
     assert isinstance(tool_set, _FakeToolSet)
     assert [tool.name for tool in tool_set.tools] == [SUMMARY_TOOL_NAME]
     assert tool_set.tools[0].parameters["additionalProperties"] is False
+    assert tool_set.tools[0].parameters["properties"]["chapters"]["maxItems"] == 8
 
 
 @pytest.mark.asyncio
@@ -168,7 +171,9 @@ async def test_explicitly_unsupported_modality_skips_tool_request(monkeypatch) -
     current = _StructuredProvider(modalities=["text"])
     provider = AstrbotProvider(_FakeContext(current, {}))  # type: ignore[arg-type]
 
-    attempt = await provider.chat_structured_summary("prompt", include_ai_summary=True)
+    attempt = await provider.chat_structured_summary(
+        "prompt", include_ai_summary=True, style="professional"
+    )
 
     assert attempt.arguments is None
     assert attempt.fallback_text == ""
@@ -181,8 +186,12 @@ async def test_unsupported_tool_error_is_cached_per_model(monkeypatch) -> None:
     current = _StructuredProvider(error=TypeError("unexpected keyword argument 'func_tool'"))
     provider = AstrbotProvider(_FakeContext(current, {}))  # type: ignore[arg-type]
 
-    first = await provider.chat_structured_summary("prompt", include_ai_summary=True)
-    second = await provider.chat_structured_summary("prompt", include_ai_summary=True)
+    first = await provider.chat_structured_summary(
+        "prompt", include_ai_summary=True, style="professional"
+    )
+    second = await provider.chat_structured_summary(
+        "prompt", include_ai_summary=True, style="professional"
+    )
 
     assert first.arguments is None
     assert second.arguments is None
@@ -195,7 +204,9 @@ async def test_plain_response_from_tool_request_is_reused_as_fallback(monkeypatc
     current = _StructuredProvider(_ToolResponse(text="# 普通 Markdown"))
     provider = AstrbotProvider(_FakeContext(current, {}))  # type: ignore[arg-type]
 
-    attempt = await provider.chat_structured_summary("prompt", include_ai_summary=True)
+    attempt = await provider.chat_structured_summary(
+        "prompt", include_ai_summary=True, style="professional"
+    )
 
     assert attempt.arguments is None
     assert attempt.fallback_text == "# 普通 Markdown"

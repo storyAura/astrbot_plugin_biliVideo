@@ -42,6 +42,7 @@ class _StructuredStubLLM:
         self.attempt = attempt
         self.fallback = fallback
         self.structured_calls: list[str] = []
+        self.structured_styles: list[str] = []
         self.plain_calls: list[str] = []
 
     async def chat(self, prompt: str, *, session_id: str | None = None) -> str:
@@ -53,9 +54,11 @@ class _StructuredStubLLM:
         prompt: str,
         *,
         include_ai_summary: bool,
+        style: str,
         session_id: str | None = None,
     ) -> StructuredSummaryAttempt:
         self.structured_calls.append(prompt)
+        self.structured_styles.append(style)
         return self.attempt
 
 
@@ -150,7 +153,9 @@ async def test_happy_path_with_subtitle(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_astrbot_structured_summary_produces_stable_timestamps(monkeypatch) -> None:
-    config = PluginConfig.from_mapping({"enable_link": True, "enable_summary": True})
+    config = PluginConfig.from_mapping(
+        {"enable_link": True, "enable_summary": True, "note_style": "concise"}
+    )
     info = VideoInfo(bvid="BV1structured", title="测试视频", owner_name="UP")
     _patch_get_video_info(monkeypatch, info)
     payload = {
@@ -159,7 +164,7 @@ async def test_astrbot_structured_summary_produces_stable_timestamps(monkeypatch
             {
                 "title": "开场",
                 "timestamp_seconds": 0,
-                "body_markdown": "- 公式 $\\frac{1}{2}$",
+                "body_markdown": r"- 公式 $\frac{1}{2}$\n- 换行后的结论",
             },
             {"title": "结尾", "timestamp_seconds": 5, "body_markdown": "结论"},
         ],
@@ -176,8 +181,11 @@ async def test_astrbot_structured_summary_produces_stable_timestamps(monkeypatch
     assert "## 开场 [00:00]" in result.markdown
     assert "## 结尾 [00:05]" in result.markdown
     assert "$\\frac{1}{2}$" in result.markdown
+    assert "- 公式 $\\frac{1}{2}$\n- 换行后的结论" in result.markdown
+    assert r"\n- 换行后的结论" not in result.markdown
     assert "⏱" not in result.markdown
     assert len(llm.structured_calls) == 1
+    assert llm.structured_styles == ["concise"]
     assert llm.plain_calls == []
     assert "00:05 | 5s - world" in llm.structured_calls[0]
 
@@ -209,6 +217,77 @@ async def test_invalid_structured_summary_falls_back_to_legacy_prompt(monkeypatc
     assert len(llm.structured_calls) == 1
     assert len(llm.plain_calls) == 1
     assert "Content-[mm:ss]" in llm.plain_calls[0]
+
+
+@pytest.mark.asyncio
+async def test_detailed_summary_over_twenty_chapters_does_not_fall_back(monkeypatch) -> None:
+    config = PluginConfig.from_mapping({"enable_link": True, "note_style": "detailed"})
+    info = VideoInfo(bvid="BV1many", title="测试视频", owner_name="UP")
+    _patch_get_video_info(monkeypatch, info)
+    payload = {
+        "title": "测试视频 - UP",
+        "chapters": [
+            {"title": f"章节 {index}", "timestamp_seconds": 0, "body_markdown": "- 内容"}
+            for index in range(21)
+        ],
+        "ai_summary": "总结",
+    }
+    llm = _StructuredStubLLM(
+        StructuredSummaryAttempt(arguments=payload),
+        fallback="# 不应进入 Markdown 回退",
+    )
+    pipeline = _StubPipeline(_make_pipeline_output())
+    orch = SummaryOrchestrator(
+        config=config, llm=llm, pipeline=pipeline, http_client=_StubHTTP()  # type: ignore[arg-type]
+    )
+
+    result = await orch.generate("https://www.bilibili.com/video/BV1many")
+
+    assert "## 章节 20 [00:00]" in result.markdown
+    assert len(llm.structured_calls) == 1
+    assert llm.plain_calls == []
+
+
+@pytest.mark.asyncio
+async def test_structured_and_fallback_requests_have_independent_timeouts(monkeypatch) -> None:
+    from bilivideo.summarize import orchestrator as orch_mod
+
+    timeouts: list[float] = []
+
+    async def _record_wait_for(awaitable, *, timeout):
+        timeouts.append(timeout)
+        return await awaitable
+
+    monkeypatch.setattr(orch_mod.asyncio, "wait_for", _record_wait_for)
+    invalid_payload = {
+        "title": "标题",
+        "chapters": [
+            {"title": "越界", "timestamp_seconds": 999, "body_markdown": "内容"}
+        ],
+        "ai_summary": "总结",
+    }
+    llm = _StructuredStubLLM(
+        StructuredSummaryAttempt(arguments=invalid_payload),
+        fallback="# Markdown 回退成功",
+    )
+    orch = SummaryOrchestrator(
+        config=PluginConfig.from_mapping({"enable_link": True}),
+        llm=llm,
+        pipeline=_StubPipeline(_make_pipeline_output()),
+        http_client=_StubHTTP(),  # type: ignore[arg-type]
+    )
+
+    markdown = await orch._request_markdown(
+        legacy_prompt="legacy",
+        structured_prompt="structured",
+        max_timestamp_seconds=10,
+    )
+
+    assert markdown == "# Markdown 回退成功"
+    assert timeouts == [
+        orch_mod.LLM_CHAT_TIMEOUT_SECONDS,
+        orch_mod.LLM_CHAT_TIMEOUT_SECONDS,
+    ]
 
 
 @pytest.mark.asyncio

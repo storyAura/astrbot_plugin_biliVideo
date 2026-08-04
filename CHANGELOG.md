@@ -8,6 +8,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Summary-style instructions no longer conflict with a global request to
+  preserve as much detail as possible. Concise output is limited to at most
+  eight single-point chapters, professional output to twelve analytical
+  chapters, and detailed output to twenty chapters. These targets are shared
+  by the prompt and AstrBot tool schema, while result validation tolerates
+  ordinary model overruns; `max_note_length` remains the only final character
+  limit.
+- Structured-output validation now treats style chapter-count overruns,
+  missing AI summaries, and nested h1/h2 headings as recoverable. It accepts
+  usable chapters, demotes nested headings to h3, and only keeps a high
+  64-chapter safety limit plus checks that protect timestamp correctness and
+  renderability.
+- The structured request and a subsequent legacy Markdown fallback now each
+  receive a fresh LLM timeout. The configured processing timeout remains the
+  overall limit for the complete download, transcription, and summary job.
+- Double-escaped line endings returned in structured `body_markdown` and
+  `ai_summary` fields are normalized at Markdown boundaries before rendering,
+  while LaTeX commands such as `\\nu` and `\\nabla` remain untouched.
 - When timestamps are enabled, AstrBot providers now request one required,
   schema-constrained summary tool call. Chapter timestamps are validated for
   type, range, and order before renderer-safe Markdown is generated. Providers

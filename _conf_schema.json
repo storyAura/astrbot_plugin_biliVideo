@@ -79,7 +79,7 @@
         "default": "professional",
         "options": ["concise", "detailed", "professional"],
         "description": "风格",
-        "hint": "concise=简洁要点 / detailed=完整记录 / professional=结构化分析"
+        "hint": "concise=最多8个单句核心观点 / detailed=最多20章完整记录 / professional=最多12章结构化分析"
       },
       "enable_link": {
         "type": "bool",
