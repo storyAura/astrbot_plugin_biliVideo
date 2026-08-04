@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import html
+import io
+import re
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from ..core.exceptions import PartialRenderError, RenderError
 from ..core.logging import get_logger
@@ -18,6 +23,159 @@ from .templates import (
 )
 
 logger = get_logger("BiliVideo/Render")
+
+
+def _math_image_element(formula: str, *, display: bool, max_width: int) -> Any:
+    """Render one formula into a self-contained image element for wkhtml."""
+
+    from xml.etree import ElementTree
+
+    from .pillow_renderer import _render_math_image
+
+    font_size = 18 if display else 14
+    color = (226, 232, 240) if display else (201, 206, 220)
+    image = _render_math_image(
+        formula,
+        font_size=font_size,
+        color=color,
+        max_width=max_width,
+    )
+    baseline_ascent = int(image.info.get("baseline_ascent", image.height))
+    baseline_descent = max(0, image.height - baseline_ascent)
+    image_bytes = io.BytesIO()
+    image.save(image_bytes, format="PNG")
+
+    class_name = "math-display" if display else "math-inline"
+    element = ElementTree.Element(
+        "img",
+        {
+            "class": class_name,
+            "src": f"data:image/png;base64,{base64.b64encode(image_bytes.getvalue()).decode()}",
+            "alt": formula,
+            "width": str(image.width),
+            "height": str(image.height),
+        },
+    )
+    if not display:
+        element.set("style", f"vertical-align:-{baseline_descent}px")
+    return element
+
+
+def _markdown_to_html(markdown_text: str, *, max_math_width: int) -> str:
+    """Convert Markdown to HTML and pre-render TeX math without JavaScript."""
+
+    from xml.etree import ElementTree
+
+    import markdown as md
+    from markdown.extensions import Extension
+    from markdown.inlinepatterns import InlineProcessor
+    from markdown.preprocessors import Preprocessor
+    from markdown.util import AtomicString
+
+    class MathInlineProcessor(InlineProcessor):
+        def __init__(self, pattern: str, *, display: bool = False) -> None:
+            super().__init__(pattern)
+            self._display = display
+
+        def handleMatch(self, match, data):  # noqa: N802
+            formula = match.group(1).strip()
+            try:
+                element = _math_image_element(
+                    formula,
+                    display=self._display,
+                    max_width=max_math_width,
+                )
+            except Exception as exc:
+                logger.warning(f"wkhtml inline formula render failed; using source: {exc}")
+                element = ElementTree.Element("span", {"class": "math-source"})
+                element.text = AtomicString(match.group(0))
+            return element, match.start(0), match.end(0)
+
+    class MathBlockPreprocessor(Preprocessor):
+        _single_line_patterns = (
+            (r"^\\\[(.+)\\\]$", r"\[", r"\]"),
+            (r"^\$\$(.+)\$\$$", "$$", "$$"),
+        )
+
+        @staticmethod
+        def _render_block(formula: str, source: str) -> str:
+            try:
+                image = _math_image_element(
+                    formula.strip(),
+                    display=True,
+                    max_width=max_math_width,
+                )
+            except Exception as exc:
+                logger.warning(f"wkhtml display formula render failed; using source: {exc}")
+                return f'<div class="math-source math-source-block">{html.escape(source)}</div>'
+            image_html = ElementTree.tostring(image, encoding="unicode", method="html")
+            return f'<div class="math-block">{image_html}</div>'
+
+        def run(self, lines: list[str]) -> list[str]:
+            output: list[str] = []
+            index = 0
+            while index < len(lines):
+                stripped = lines[index].strip()
+
+                single_line = None
+                for pattern, opener, closer in self._single_line_patterns:
+                    match = re.match(pattern, stripped)
+                    if match:
+                        single_line = (match.group(1), f"{opener}{match.group(1)}{closer}")
+                        break
+                if single_line is not None:
+                    formula, source = single_line
+                    output.extend(("", self._render_block(formula, source), ""))
+                    index += 1
+                    continue
+
+                if stripped not in {r"\[", "$$"}:
+                    output.append(lines[index])
+                    index += 1
+                    continue
+
+                closer = r"\]" if stripped == r"\[" else "$$"
+                end = index + 1
+                while end < len(lines) and lines[end].strip() != closer:
+                    end += 1
+                if end >= len(lines):
+                    output.append(lines[index])
+                    index += 1
+                    continue
+
+                formula_lines = lines[index + 1 : end]
+                source_lines = lines[index : end + 1]
+                output.extend(
+                    (
+                        "",
+                        self._render_block("\n".join(formula_lines), "\n".join(source_lines)),
+                        "",
+                    )
+                )
+                index = end + 1
+            return output
+
+    class MathImageExtension(Extension):
+        def extendMarkdown(self, markdown) -> None:  # noqa: N802
+            # Fenced code is stashed at priority 25; emit block HTML before
+            # the core html_block preprocessor stashes it at priority 20.
+            markdown.preprocessors.register(MathBlockPreprocessor(markdown), "math_block_image", 21)
+            # Backtick code runs at 190 and escaped delimiters at 180.
+            markdown.inlinePatterns.register(
+                MathInlineProcessor(r"(?<!\\)\\\((.+?)(?<!\\)\\\)"),
+                "math_bracket_inline_image",
+                185,
+            )
+            markdown.inlinePatterns.register(
+                MathInlineProcessor(r"(?<!\\)(?<!\$)\$(?!\$)(.+?)(?<!\\)\$(?!\$)"),
+                "math_dollar_inline_image",
+                184,
+            )
+
+    return md.markdown(
+        markdown_text,
+        extensions=["tables", "fenced_code", "nl2br", MathImageExtension()],
+    )
 
 
 class WkHtmlRenderer:
@@ -99,14 +257,16 @@ class WkHtmlRenderer:
     ) -> None:
         try:
             import imgkit
-            import markdown as md
         except ImportError as exc:  # pragma: no cover - env-dependent
             raise RenderError(f"missing dependency: {exc}") from exc
 
-        html_body = md.markdown(
-            markdown_text,
-            extensions=["tables", "fenced_code", "nl2br"],
-        )
+        try:
+            html_body = _markdown_to_html(
+                markdown_text,
+                max_math_width=max(160, self._image_width - 120),
+            )
+        except ImportError as exc:  # pragma: no cover - env-dependent
+            raise RenderError(f"missing dependency: {exc}") from exc
         html_body = sanitize_html(html_body)
         html_body = highlight_timestamps(html_body)
         title_text, html_body = extract_title(html_body)

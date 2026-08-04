@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Added server-side LaTeX rendering to the preferred `wkhtmltoimage`
+  backend. Inline and display formulas are converted to embedded MathText
+  PNGs, with no JavaScript, network resource, or TeX installation required.
 - Restored the original `wkhtmltoimage` HTML/CSS renderer as the preferred
   backend whenever its executable is available on `PATH`.
 - Added an all-Python fallback for hosts without `wkhtmltoimage`:

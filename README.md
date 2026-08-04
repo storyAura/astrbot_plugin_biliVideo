@@ -71,7 +71,7 @@ biliVideo v2.0 是一次**完全重写**的工程升级。主要目标:
 本插件**无需手动安装任何系统依赖**。AstrBot 安装插件时会自动 `pip install -r requirements.txt`,其中已包含:
 
 - **ffmpeg**:由 `imageio-ffmpeg` 提供静态二进制,无字幕视频走 ASR 转写时自动调用;系统若已装 ffmpeg 则优先用系统版。
-- **图片渲染**:检测到 `wkhtmltoimage` 时使用原 HTML/CSS 渲染;未检测到时自动使用 Markdown AST + MathText + Pillow 后备。内建 Noto Sans SC 中文字型(GB2312 子集,SIL OFL),容器无图形环境也能出图。
+- **图片渲染**:检测到 `wkhtmltoimage` 时使用 HTML/CSS 渲染并在服务端预渲染 LaTeX;未检测到时自动使用 Markdown AST + MathText + Pillow 后备。内建 Noto Sans SC 中文字型(GB2312 子集,SIL OFL),容器无图形环境也能出图。
 - 装好后用 `/总结状态` 即可看到检测出的渲染后端与 ffmpeg 来源(系统 / 内建)。
 
 ### 可选增强:wkhtmltopdf HTML/CSS 渲染
@@ -95,7 +95,7 @@ apt install -y fonts-noto-cjk    # 或 fonts-wqy-zenhei
 
 > 纯文本模式:把 `output_image` 设为 `false` 即可完全免图片渲染依赖。
 
-> 纯 Python 后备模式使用 Matplotlib MathText 的 TeX 子集,覆盖分数、根式、上下标、求和、积分、希腊字母和 `\text{}` 等常见总结场景;原 wkhtml 模式保持原有渲染逻辑,不额外处理 LaTeX。
+> wkhtml 和纯 Python 后备模式共用 Matplotlib MathText 的 TeX 子集,覆盖分数、根式、上下标、求和、积分、希腊字母和 `\text{}` 等常见总结场景。wkhtml 模式会将公式预渲染为内嵌透明图片,不需要 JavaScript 或网络资源。
 
 ---
 

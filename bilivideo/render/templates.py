@@ -238,6 +238,12 @@ p{margin-bottom:10px;text-align:justify;word-break:break-word;word-wrap:break-wo
   overflow-wrap:anywhere;font-size:14px}
 a{color:#93c5fd;overflow-wrap:anywhere;word-wrap:break-word;word-break:break-word}
 img{max-width:100%;height:auto;display:block}
+.math-inline{display:inline-block;max-width:100%;height:auto;margin:0 2px}
+.math-block{text-align:center;margin:12px 0;overflow:hidden;line-height:1}
+.math-block .math-display{display:inline-block;max-width:100%;height:auto;margin:0 auto}
+.math-source{font-family:'JetBrains Mono',monospace;color:#fca5a5;font-size:13px;
+             white-space:pre-wrap;overflow-wrap:anywhere;word-wrap:break-word}
+.math-source-block{display:block;text-align:center;margin:12px 0}
 strong{color:#f9a8d4;font-weight:700}
 em{color:#67e8f9;font-style:italic}
 .ts{display:inline-block;background:rgba(251,146,60,.15);color:#fb923c;font-weight:700;
