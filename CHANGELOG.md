@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- When timestamps are enabled, AstrBot providers now request one required,
+  schema-constrained summary tool call. Chapter timestamps are validated for
+  type, range, and order before renderer-safe Markdown is generated. Providers
+  without tool support and invalid tool responses fall back to the legacy
+  Markdown prompt; custom OpenAI-compatible providers remain on that legacy
+  path and never receive tool arguments.
+- Timestamp parsing now accepts `m:ss`, `mm:ss`, and `h:mm:ss`. Summary cache
+  keys include the output format, provider/model, and timestamp-related options
+  so stale no-timestamp summaries are not reused after configuration changes.
+- Replaced the timestamp pill's unsupported stopwatch character with a
+  font-safe time label. A timestamp emitted as a paragraph directly after a
+  chapter heading is merged into that heading instead of being discarded.
 - Added server-side LaTeX rendering to the preferred `wkhtmltoimage`
   backend. Inline and display formulas are converted to embedded MathText
   PNGs, with no JavaScript, network resource, or TeX installation required.

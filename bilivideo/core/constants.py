@@ -74,7 +74,7 @@ SHORT_URL_REGEX: Final[re.Pattern[str]] = re.compile(
 )
 QQDOC_URL_REGEX: Final[re.Pattern[str]] = re.compile(r'"qqdocurl"\s*:\s*"(https?://[^"]+)"')
 TIMESTAMP_REGEX: Final[re.Pattern[str]] = re.compile(
-    r"\*?Content-(?:\[(\d{2}):(\d{2})\]|(\d{2}):(\d{2}))\*?"
+    r"\*?Content-(?:\[((?:\d{1,2}:)?\d{1,2}:\d{2})\]|((?:\d{1,2}:)?\d{1,2}:\d{2}))\*?"
 )
 
 # ──────────────────────────── Misc ───────────────────────────────

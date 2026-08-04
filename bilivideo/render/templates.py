@@ -142,13 +142,17 @@ def sanitize_html(html: str) -> str:
 def highlight_timestamps(html: str) -> str:
     """Wrap stand-alone timestamps in pill-style spans."""
 
-    html = re.sub(r"⏱\s*(\d{1,2}:\d{2})", r'<span class="ts">⏱ \1</span>', html)
-    html = re.sub(r"\[(\d{1,2}:\d{2})\]", r'<span class="ts">⏱ \1</span>', html)
-    # remove orphaned timestamp paragraphs sitting right after an h2 heading
+    time_pattern = r"((?:\d{1,2}:)?\d{1,2}:\d{2})"
+    html = re.sub(rf"⏱\s*{time_pattern}", r'<span class="ts">\1</span>', html)
+    html = re.sub(rf"\[{time_pattern}\]", r'<span class="ts">\1</span>', html)
+    # Models sometimes put the marker on the line after an h2. Merge that
+    # pill into the heading so both layouts produce the same visible result.
     html = re.sub(
-        r"(</h2>\s*)<p>\s*<span class=\"ts\">[^<]*</span>\s*\*?\s*</p>",
-        r"\1",
+        r'(<h2\b[^>]*>(?:(?!</h2>).)*?)(</h2>\s*)'
+        r'<p>\s*(<span class="ts">[^<]*</span>)\s*</p>',
+        r"\1 \3\2",
         html,
+        flags=re.IGNORECASE | re.DOTALL,
     )
     return html
 

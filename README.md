@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-2.0.1-orange)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-249%20passing-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-287%20passing-success)](tests/)
 
 </div>
 
@@ -22,7 +22,7 @@ biliVideo v2.0 是一次**完全重写**的工程升级。主要目标:
 - **可维护性**:`main.py` 从 2,000 行单一巨型文件瘦身到约 160 行。所有逻辑下放到 `bilivideo/` 子包,按职责严格分层。
 - **健壮性**:HTTP 层采用共享 `aiohttp.ClientSession` + 指数退避重试;订阅文件原子写入 + `fsync`;Cookie 文件 0600 权限。
 - **响应速度**:带 TTL 的 LRU 缓存避免同一 BV 重复请求 B 站;single-flight 让多人同时粘贴同一链接只触发一次工作。
-- **可测试**:249 个 PyTest 单元/集成测试覆盖 URL 解析、分页、智能截断、订阅持久化、冷却、缓存、消息路由、渲染降级链等。
+- **可测试**:287 个 PyTest 单元/集成测试覆盖 URL 解析、分页、智能截断、结构化输出、订阅持久化、冷却、缓存、消息路由、渲染降级链等。
 - **类型化**:所有 API 返回 `dataclass`(`VideoInfo` / `UploaderInfo` / …),配置读取经 `PluginConfig` 校验。
 
 > 命令、配置项、行为对终端用户**完全向后兼容**。配置文件不需要改动即可升级。
@@ -47,7 +47,7 @@ biliVideo v2.0 是一次**完全重写**的工程升级。主要目标:
 | 类别 | 特性 |
 | --- | --- |
 | 输出 | wkhtml HTML/CSS 卡片 / Python Markdown + LaTeX 后备 / 纯文本回退 / 合并转发模式 |
-| 总结 | 简洁 / 详细 / 专业 三种风格,LLM 可换 |
+| 总结 | 简洁 / 详细 / 专业 三种风格;AstrBot 工具调用稳定约束章节时间戳 |
 | 输入 | 完整链接、短链、BV 号、UID、空间链接、UP 主昵称 |
 | 智能 | 自动识别小程序/链接/短链;**触发关键词**配置化 |
 | 订阅 | 订阅 UP 主自动推送;支持指定推送群/QQ |
@@ -212,6 +212,8 @@ AI 自动组合调用两个工具:`bilibili_search_list` 与 `bilibili_search_do
 | `llm_provider_id` | `""` | 指定 AstrBot 内置模型 ID(留空=当前模型;用 `/总结模型` 查看可用 ID) |
 | `enable_auto_push` | `false` | 启用定时推送新视频 |
 | `auto_push_summary` | `true` | 推送新视频时是否附带 AI 总结 |
+
+启用 `enable_link` 且使用 AstrBot 内置 Provider 时,插件会在模型声明支持工具调用后要求其提交结构化章节和整数秒时间戳,并校验时间范围与章节顺序。模型或 Provider 不支持工具调用、或结构化结果校验失败时,会自动回退到原有 Markdown 提示词。`openai_compatible` 自建 Provider 始终沿用原有 Markdown 路径,不会收到工具参数。
 | `check_interval_minutes` | `600` | 定时检查间隔 |
 | `max_subscriptions` | `20` | 每个会话最大订阅数 |
 | `enable_miniapp_detect` | `false` | 自动识别群内 B 站链接 |

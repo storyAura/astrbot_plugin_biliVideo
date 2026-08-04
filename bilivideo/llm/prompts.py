@@ -9,6 +9,33 @@ from __future__ import annotations
 
 from ..core.types import TranscriptSegment
 
+MARKDOWN_OUTPUT_INSTRUCTIONS = """\
+输出说明:
+- 仅返回最终的 **Markdown 内容**。
+- **不要**将输出包裹在代码块中(例如:```` ```markdown ````,```` ``` ````)。
+- 在生成 Markdown 时,避免将编号标题写成有序列表的格式,以免解析错误。"""
+
+STRUCTURED_OUTPUT_INSTRUCTIONS = """\
+输出说明:
+- 当 `submit_video_summary` 工具可用时,必须调用该工具,不要输出普通正文。
+- `timestamp_seconds` 必须复制对应转录片段的整数秒,章节必须按时间递增。
+- 如果运行环境没有提供该工具,则回退为最终 Markdown 内容,且不要包裹代码块。"""
+
+MARKDOWN_FORMAT_INSTRUCTIONS = """\
+格式要求(非常重要):
+- **第一行必须是 h1 标题**,格式为 `# 视频标题 - 作者名`。
+- 使用 `## 章节标题` 来分隔不同内容板块。
+- 不要使用多个 h1 标题,整篇总结只能有第一行那一个 h1。
+- 每个板块内可以使用列表、引用块(> 引用)、**加粗** 和 *斜体* 来组织信息。
+- 合理分段,避免单个板块内容过长。"""
+
+STRUCTURED_FORMAT_INSTRUCTIONS = """\
+工具参数要求(非常重要):
+- `title` 填写视频标题和作者名,不要添加 Markdown 标题符号。
+- 每个主要内容板块对应 `chapters` 中的一项。
+- `body_markdown` 可以使用列表、引用块、表格、加粗、斜体和 LaTeX,但不要包含 h1/h2。
+- 合理分段,避免单个板块内容过长。"""
+
 BASE_PROMPT = """\
 你是一个专业的总结助手,擅长将视频转录内容整理成清晰、有条理且信息丰富的总结。
 
@@ -22,19 +49,11 @@ BASE_PROMPT = """\
 视频标签:
 {tags}
 
-输出说明:
-- 仅返回最终的 **Markdown 内容**。
-- **不要**将输出包裹在代码块中(例如:```` ```markdown ````,```` ``` ````)。
-- 在生成 Markdown 时,避免将编号标题写成有序列表的格式,以免解析错误。
+{output_instructions}
 
-格式要求(非常重要):
-- **第一行必须是 h1 标题**,格式为 `# 视频标题 - 作者名`。
-- 使用 `## 章节标题` 来分隔不同内容板块。
-- 不要使用多个 h1 标题,整篇总结只能有第一行那一个 h1。
-- 每个板块内可以使用列表、引用块(> 引用)、**加粗** 和 *斜体* 来组织信息。
-- 合理分段,避免单个板块内容过长。
+{format_instructions}
 
-视频分段(格式:开始时间 - 内容):
+视频分段(格式:{segment_format}):
 
 ---
 {segment_text}
@@ -86,7 +105,13 @@ def format_time(seconds: float) -> str:
     return f"{m:02d}:{s:02d}"
 
 
-def render_segment_text(segments: tuple[TranscriptSegment, ...]) -> str:
+def render_segment_text(
+    segments: tuple[TranscriptSegment, ...], *, include_seconds: bool = False
+) -> str:
+    if include_seconds:
+        return "\n".join(
+            f"{format_time(seg.start)} | {int(seg.start)}s - {seg.text.strip()}" for seg in segments
+        )
     return "\n".join(f"{format_time(seg.start)} - {seg.text.strip()}" for seg in segments)
 
 
@@ -98,16 +123,28 @@ def build_prompt(
     style: str | None = None,
     enable_link: bool = False,
     enable_summary: bool = True,
+    structured_output: bool = False,
 ) -> str:
     """Compose the final prompt sent to the LLM."""
 
     body = BASE_PROMPT.format(
         video_title=title,
-        segment_text=render_segment_text(segments),
+        segment_text=render_segment_text(segments, include_seconds=structured_output),
         tags=tags,
+        output_instructions=(
+            STRUCTURED_OUTPUT_INSTRUCTIONS if structured_output else MARKDOWN_OUTPUT_INSTRUCTIONS
+        ),
+        format_instructions=(
+            STRUCTURED_FORMAT_INSTRUCTIONS
+            if structured_output
+            else MARKDOWN_FORMAT_INSTRUCTIONS
+        ),
+        segment_format=(
+            "显示时间 | 整数秒s - 内容" if structured_output else "开始时间 - 内容"
+        ),
     )
     pieces = [body]
-    if enable_link:
+    if enable_link and not structured_output:
         pieces.append(LINK_INSTRUCTION)
     if enable_summary:
         pieces.append(AI_SUMMARY_INSTRUCTION)

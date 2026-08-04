@@ -85,7 +85,7 @@
         "type": "bool",
         "default": true,
         "description": "插入时间戳",
-        "hint": "在总结中嵌入 [mm:ss] 跳转标记"
+        "hint": "在总结中嵌入 [mm:ss] 跳转标记；AstrBot 内置且支持工具调用的模型会使用结构化输出，不支持时自动回退"
       },
       "enable_summary": {
         "type": "bool",

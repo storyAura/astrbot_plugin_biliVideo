@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from bilivideo.render.templates import build_full_html, sanitize_html
+from bilivideo.render.templates import build_full_html, highlight_timestamps, sanitize_html
 
 
 def _style(html: str) -> str:
@@ -91,3 +91,26 @@ class TestSanitizerBlocksFileScheme:
         out = sanitize_html('<a href="javascript:alert(1)">x</a>')
         assert "javascript:" not in out
         assert "unsafe:" in out
+
+
+class TestTimestampLayout:
+    def test_timestamp_pill_does_not_emit_missing_stopwatch_glyph(self) -> None:
+        out = highlight_timestamps("<h2>章节 ⏱ 01:32</h2>")
+        assert '<span class="ts">01:32</span>' in out
+        assert "⏱" not in out
+
+    def test_supports_hour_timestamps(self) -> None:
+        out = highlight_timestamps("<h2>章节 [1:02:03]</h2>")
+        assert '<span class="ts">1:02:03</span>' in out
+
+    def test_merges_standalone_timestamp_into_previous_heading(self) -> None:
+        out = highlight_timestamps("<h2>章节</h2>\n<p>[02:30]</p><p>内容</p>")
+        assert '<h2>章节 <span class="ts">02:30</span></h2>' in out
+        assert "<p><span" not in out
+        assert "<p>内容</p>" in out
+
+    def test_does_not_merge_timestamp_across_chapter_content(self) -> None:
+        source = "<h2>章节 A</h2><p>内容</p><h2>章节 B</h2><p>[02:30]</p>"
+        out = highlight_timestamps(source)
+        assert "<h2>章节 A</h2><p>内容</p>" in out
+        assert '<h2>章节 B <span class="ts">02:30</span></h2>' in out
