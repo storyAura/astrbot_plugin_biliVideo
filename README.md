@@ -8,7 +8,7 @@
 [![AstrBot](https://img.shields.io/badge/AstrBot-v4.0%2B-blueviolet)](https://astrbot.app/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.0.1-orange)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.1.0-orange)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/tests-299%20passing-success)](tests/)
 
 </div>
@@ -27,7 +27,9 @@ biliVideo v2.0 是一次**完全重写**的工程升级。主要目标:
 
 > 命令、配置项、行为对终端用户**完全向后兼容**。配置文件不需要改动即可升级。
 
-**v2.0.1** 是并发与健壮性修复版:手动 `/检查更新` 与定时推送不再可能重复推送同一视频(按订阅加锁);订阅数据写盘失败会回滚并提示、热重载不再可能被旧实例脏写;渲染与写盘全部移出事件循环;推送目标管理命令限制为管理员;版本号与配置默认值单一来源化。另合入引用消息中 QQ 小程序卡片的直接解析([#24](https://github.com/storyAura/astrbot_plugin_biliVideo/pull/24))。详见 [CHANGELOG](CHANGELOG.md)。
+**v2.1.0** 完善总结图片与时间戳([#27](https://github.com/storyAura/astrbot_plugin_biliVideo/pull/27), 感谢 [@Eco404](https://github.com/Eco404)):检测到 `wkhtmltoimage` 时继续用 HTML/CSS 并在服务端预渲染 LaTeX;未安装系统渲染工具时自动用纯 Python 后备(Markdown AST + MathText + Pillow)。开启时间戳且走 AstrBot Provider 时,优先强制工具调用拿到结构化章节并校验范围/顺序,失败或不支持工具时回退原 Markdown 提示词;`openai_compatible` 自建 Provider 行为不变。无需改配置即可升级。详见 [CHANGELOG](CHANGELOG.md)。
+
+**v2.0.1** 是并发与健壮性修复版:手动 `/检查更新` 与定时推送不再可能重复推送同一视频(按订阅加锁);订阅数据写盘失败会回滚并提示、热重载不再可能被旧实例脏写;渲染与写盘全部移出事件循环;推送目标管理命令限制为管理员;版本号与配置默认值单一来源化。另合入引用消息中 QQ 小程序卡片的直接解析([#24](https://github.com/storyAura/astrbot_plugin_biliVideo/pull/24))。
 
 ---
 
@@ -295,6 +297,7 @@ bilivideo/
   v2.0 重构在保留所有功能的前提下完成。
 - 引用消息硬拦截的 PR 灵感来自 [@Jeric-X](https://github.com/Jeric-X)。
 - 引用消息中 QQ 小程序卡片解析由 [@pheasantgogogo](https://github.com/pheasantgogogo) 贡献(#24)。
+- Markdown/LaTeX 图片渲染与结构化时间戳由 [@Eco404](https://github.com/Eco404) 贡献(#27)。
 
 ---
 

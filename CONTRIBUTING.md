@@ -29,7 +29,7 @@ astrbot_plugin_biliVideo/
 │   ├── handlers/          # One file per command/event handler
 │   ├── tools/             # AI function-call tool registrations
 │   └── services.py        # Composition root (BiliVideoServices)
-└── tests/                 # PyTest suite (249 tests as of v2.0.1)
+└── tests/                 # PyTest suite (299 tests as of v2.1.0)
 ```
 
 ## Code style
