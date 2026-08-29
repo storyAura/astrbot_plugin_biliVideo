@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
+import re
+
 from ..core.constants import TIMESTAMP_REGEX
 
 
 def replace_timestamp_markers(markdown: str) -> str:
-    """Convert `Content-04:16` / `Content-[04:16]` placeholders to ⏱ tags."""
+    """Convert LLM `Content-[time]` placeholders to font-safe tags."""
 
-    def _sub(match: object) -> str:
-        mm = match.group(1) or match.group(3)
-        ss = match.group(2) or match.group(4)
-        return f"⏱ {mm}:{ss}"
+    def _sub(match: re.Match[str]) -> str:
+        token = match.group(1) or match.group(2)
+        parts = [int(part) for part in token.split(":")]
+        if parts[-1] >= 60 or (len(parts) == 3 and parts[-2] >= 60):
+            return match.group(0)
+        if len(parts) == 3:
+            normalized = f"{parts[0]}:{parts[1]:02d}:{parts[2]:02d}"
+        else:
+            normalized = f"{parts[0]:02d}:{parts[1]:02d}"
+        return f"[{normalized}]"
 
     return TIMESTAMP_REGEX.sub(_sub, markdown)
 

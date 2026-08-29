@@ -1,7 +1,7 @@
 """Color palettes used by the renderer.
 
-Kept in a tiny module so designers can edit colors without touching the
-HTML template logic.
+Kept in a tiny module so designers can edit colors without touching either
+renderer implementation.
 """
 
 from __future__ import annotations

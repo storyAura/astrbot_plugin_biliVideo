@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from bilivideo.core.exceptions import LLMError
 from bilivideo.llm.astrbot_provider import AstrbotProvider
+from bilivideo.llm.structured_summary import SUMMARY_TOOL_NAME
 
 
 class _FakeResponse:
@@ -79,3 +82,131 @@ async def test_none_context_raises_llm_error() -> None:
 
     with pytest.raises(LLMError):
         await provider.chat("hello")
+
+
+class _FakeFunctionTool:
+    def __init__(self, **kwargs: Any) -> None:
+        self.name = kwargs["name"]
+        self.parameters = kwargs["parameters"]
+
+
+class _FakeToolSet:
+    def __init__(self, tools: list[_FakeFunctionTool]) -> None:
+        self.tools = tools
+
+
+class _StructuredProvider:
+    def __init__(
+        self,
+        response: object | None = None,
+        *,
+        modalities: list[str] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.provider_config = {"modalities": modalities or []}
+        self.response = response
+        self.error = error
+        self.calls: list[dict[str, Any]] = []
+
+    async def text_chat(self, **kwargs: Any) -> object:
+        self.calls.append(kwargs)
+        if self.error:
+            raise self.error
+        return self.response or _FakeResponse("")
+
+    def get_model(self) -> str:
+        return "test-model"
+
+
+class _ToolResponse(_FakeResponse):
+    def __init__(
+        self,
+        *,
+        names: list[str] | None = None,
+        arguments: list[dict[str, object]] | None = None,
+        text: str = "",
+    ) -> None:
+        super().__init__(text)
+        self.tools_call_name = names or []
+        self.tools_call_args = arguments or []
+
+
+def _enable_fake_tools(monkeypatch) -> None:
+    monkeypatch.setattr("bilivideo.llm.astrbot_provider.FunctionTool", _FakeFunctionTool)
+    monkeypatch.setattr("bilivideo.llm.astrbot_provider.ToolSet", _FakeToolSet)
+
+
+@pytest.mark.asyncio
+async def test_structured_summary_requires_single_astrbot_tool(monkeypatch) -> None:
+    _enable_fake_tools(monkeypatch)
+    payload = {
+        "title": "标题",
+        "chapters": [
+            {"title": "章节", "timestamp_seconds": 0, "body_markdown": "内容"}
+        ],
+    }
+    current = _StructuredProvider(
+        _ToolResponse(names=[SUMMARY_TOOL_NAME], arguments=[payload]),
+        modalities=["text", "tool_use"],
+    )
+    provider = AstrbotProvider(_FakeContext(current, {}))  # type: ignore[arg-type]
+
+    attempt = await provider.chat_structured_summary(
+        "prompt", include_ai_summary=False, style="concise"
+    )
+
+    assert attempt.arguments == payload
+    assert len(current.calls) == 1
+    assert current.calls[0]["tool_choice"] == "required"
+    tool_set = current.calls[0]["func_tool"]
+    assert isinstance(tool_set, _FakeToolSet)
+    assert [tool.name for tool in tool_set.tools] == [SUMMARY_TOOL_NAME]
+    assert tool_set.tools[0].parameters["additionalProperties"] is False
+    assert tool_set.tools[0].parameters["properties"]["chapters"]["maxItems"] == 8
+
+
+@pytest.mark.asyncio
+async def test_explicitly_unsupported_modality_skips_tool_request(monkeypatch) -> None:
+    _enable_fake_tools(monkeypatch)
+    current = _StructuredProvider(modalities=["text"])
+    provider = AstrbotProvider(_FakeContext(current, {}))  # type: ignore[arg-type]
+
+    attempt = await provider.chat_structured_summary(
+        "prompt", include_ai_summary=True, style="professional"
+    )
+
+    assert attempt.arguments is None
+    assert attempt.fallback_text == ""
+    assert current.calls == []
+
+
+@pytest.mark.asyncio
+async def test_unsupported_tool_error_is_cached_per_model(monkeypatch) -> None:
+    _enable_fake_tools(monkeypatch)
+    current = _StructuredProvider(error=TypeError("unexpected keyword argument 'func_tool'"))
+    provider = AstrbotProvider(_FakeContext(current, {}))  # type: ignore[arg-type]
+
+    first = await provider.chat_structured_summary(
+        "prompt", include_ai_summary=True, style="professional"
+    )
+    second = await provider.chat_structured_summary(
+        "prompt", include_ai_summary=True, style="professional"
+    )
+
+    assert first.arguments is None
+    assert second.arguments is None
+    assert len(current.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_plain_response_from_tool_request_is_reused_as_fallback(monkeypatch) -> None:
+    _enable_fake_tools(monkeypatch)
+    current = _StructuredProvider(_ToolResponse(text="# 普通 Markdown"))
+    provider = AstrbotProvider(_FakeContext(current, {}))  # type: ignore[arg-type]
+
+    attempt = await provider.chat_structured_summary(
+        "prompt", include_ai_summary=True, style="professional"
+    )
+
+    assert attempt.arguments is None
+    assert attempt.fallback_text == "# 普通 Markdown"

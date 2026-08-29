@@ -8,11 +8,25 @@ from bilivideo.summarize.post_process import replace_timestamp_markers, smart_tr
 class TestReplaceTimestampMarkers:
     def test_bracketed(self) -> None:
         out = replace_timestamp_markers("Look at *Content-[04:16]*")
-        assert "⏱ 04:16" in out
+        assert out == "Look at [04:16]"
+
+    def test_heading_does_not_keep_trailing_emphasis_marker(self) -> None:
+        out = replace_timestamp_markers("## 章节 *Content-[00:21]*")
+        assert out == "## 章节 [00:21]"
 
     def test_unbracketed(self) -> None:
         out = replace_timestamp_markers("Content-04:16 ok")
-        assert "⏱ 04:16" in out
+        assert "[04:16]" in out
+
+    def test_normalizes_single_digit_minutes(self) -> None:
+        assert replace_timestamp_markers("Content-[2:03]") == "[02:03]"
+
+    def test_keeps_hour_component(self) -> None:
+        assert replace_timestamp_markers("Content-[1:02:03]") == "[1:02:03]"
+
+    def test_invalid_seconds_are_left_visible(self) -> None:
+        source = "Content-[01:99]"
+        assert replace_timestamp_markers(source) == source
 
     def test_no_marker(self) -> None:
         text = "no markers here"

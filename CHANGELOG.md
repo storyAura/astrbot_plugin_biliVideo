@@ -4,6 +4,51 @@ All notable changes to this plugin are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+
+- Summary-style instructions no longer conflict with a global request to
+  preserve as much detail as possible. Concise output is limited to at most
+  eight single-point chapters, professional output to twelve analytical
+  chapters, and detailed output to twenty chapters. These targets are shared
+  by the prompt and AstrBot tool schema, while result validation tolerates
+  ordinary model overruns; `max_note_length` remains the only final character
+  limit.
+- Structured-output validation now treats style chapter-count overruns,
+  missing AI summaries, and nested h1/h2 headings as recoverable. It accepts
+  usable chapters, demotes nested headings to h3, and only keeps a high
+  64-chapter safety limit plus checks that protect timestamp correctness and
+  renderability.
+- The structured request and a subsequent legacy Markdown fallback now each
+  receive a fresh LLM timeout. The configured processing timeout remains the
+  overall limit for the complete download, transcription, and summary job.
+- Double-escaped line endings returned in structured `body_markdown` and
+  `ai_summary` fields are normalized at Markdown boundaries before rendering,
+  while LaTeX commands such as `\\nu` and `\\nabla` remain untouched.
+- When timestamps are enabled, AstrBot providers now request one required,
+  schema-constrained summary tool call. Chapter timestamps are validated for
+  type, range, and order before renderer-safe Markdown is generated. Providers
+  without tool support and invalid tool responses fall back to the legacy
+  Markdown prompt; custom OpenAI-compatible providers remain on that legacy
+  path and never receive tool arguments.
+- Timestamp parsing now accepts `m:ss`, `mm:ss`, and `h:mm:ss`. Summary cache
+  keys include the output format, provider/model, and timestamp-related options
+  so stale no-timestamp summaries are not reused after configuration changes.
+- Replaced the timestamp pill's unsupported stopwatch character with a
+  font-safe time label. A timestamp emitted as a paragraph directly after a
+  chapter heading is merged into that heading instead of being discarded.
+- Added server-side LaTeX rendering to the preferred `wkhtmltoimage`
+  backend. Inline and display formulas are converted to embedded MathText
+  PNGs, with no JavaScript, network resource, or TeX installation required.
+- Restored the original `wkhtmltoimage` HTML/CSS renderer as the preferred
+  backend whenever its executable is available on `PATH`.
+- Added an all-Python fallback for hosts without `wkhtmltoimage`:
+  `markdown-it-py` parses CommonMark, Matplotlib MathText renders common TeX
+  expressions, and Pillow composes the final cards. The fallback preserves
+  emphasis, inline code, links, nested lists, blockquotes, tables, inline math,
+  and display math; malformed formulas fall back to visible source text.
+
 ## v2.0.1 (2026-07-11) — Concurrency & robustness fixes
 
 > Bug-fix release: no new commands or config keys; fully backward-compatible.
@@ -32,7 +77,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   never clobber a newer write, and `shutdown()` closes the store so a stale
   hot-reloaded instance can't dump its old snapshot over fresh data.
 - Rendering no longer blocks the event loop: `render_note_components` is
-  async and offloads wkhtmltoimage / Pillow work via `asyncio.to_thread`.
+  async and offloads image work via `asyncio.to_thread`.
 - Waiter cancellation no longer poisons shared futures in
   `InflightDeduper`/`LRUTTLCache` (waiters use `asyncio.shield`; keys are
   always cleaned up).

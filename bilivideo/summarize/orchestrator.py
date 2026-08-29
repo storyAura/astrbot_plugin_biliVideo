@@ -13,6 +13,7 @@ specific user-facing errors (`BiliVideoError.user_message`).
 from __future__ import annotations
 
 import asyncio
+import math
 from dataclasses import dataclass
 
 from ..api.client import BilibiliHTTPClient
@@ -24,7 +25,13 @@ from ..core.exceptions import BiliVideoError
 from ..core.logging import get_logger
 from ..core.types import VideoInfo
 from ..llm.prompts import build_prompt
-from ..llm.provider import LLMProvider
+from ..llm.provider import LLMProvider, StructuredSummaryProvider
+from ..llm.structured_summary import (
+    SUMMARY_FORMAT_VERSION,
+    StructuredSummaryError,
+    parse_structured_summary,
+    structured_summary_to_markdown,
+)
 from ..parsing.url_extractor import extract_bvid
 from ..transcription.pipeline import TranscriptPipeline
 from .post_process import replace_timestamp_markers, smart_truncate
@@ -78,8 +85,9 @@ class SummaryOrchestrator:
 
     async def _generate(self, video_url: str) -> NoteResult:
         bvid = extract_bvid(video_url)
-        if bvid:
-            cached = await self._cache.get(bvid)
+        cache_key = self._summary_cache_key(bvid) if bvid else None
+        if cache_key:
+            cached = await self._cache.get(cache_key)
             if cached is not None:
                 logger.info(f"summary cache hit for {bvid}")
                 return cached
@@ -115,19 +123,30 @@ class SummaryOrchestrator:
             elif isinstance(raw_tags, str):
                 tags = raw_tags
 
-        prompt = build_prompt(
-            title=title,
-            segments=output.transcript.segments,
-            tags=tags,
-            style=self._config.note_style,
-            enable_link=self._config.enable_link,
-            enable_summary=self._config.enable_summary,
-        )
+        prompt_args = {
+            "title": title,
+            "segments": output.transcript.segments,
+            "tags": tags,
+            "style": self._config.note_style,
+            "enable_link": self._config.enable_link,
+            "enable_summary": self._config.enable_summary,
+        }
+        legacy_prompt = build_prompt(**prompt_args, structured_output=False)
+        structured_prompt = build_prompt(**prompt_args, structured_output=True)
 
         try:
-            markdown = await asyncio.wait_for(
-                self._llm.chat(prompt, session_id="BiliVideo_plugin"),
-                timeout=LLM_CHAT_TIMEOUT_SECONDS,
+            markdown = await self._request_markdown(
+                legacy_prompt=legacy_prompt,
+                structured_prompt=structured_prompt,
+                max_timestamp_seconds=max(
+                    0,
+                    math.ceil(
+                        max(
+                            (segment.end for segment in output.transcript.segments),
+                            default=0,
+                        )
+                    ),
+                ),
             )
         except asyncio.TimeoutError as exc:
             raise BiliVideoError(
@@ -140,7 +159,7 @@ class SummaryOrchestrator:
         if not markdown:
             raise BiliVideoError("empty LLM output", user_message="❌ AI 返回内容为空,请重试")
 
-        if self._config.enable_link and bvid:
+        if self._config.enable_link:
             markdown = replace_timestamp_markers(markdown)
 
         markdown = smart_truncate(markdown, self._config.max_note_length)
@@ -150,6 +169,71 @@ class SummaryOrchestrator:
             video_info=info,
             used_subtitle=output.audio is None,
         )
-        if bvid:
-            await self._cache.set(bvid, result)
+        if cache_key:
+            await self._cache.set(cache_key, result)
         return result
+
+    async def _request_markdown(
+        self,
+        *,
+        legacy_prompt: str,
+        structured_prompt: str,
+        max_timestamp_seconds: int,
+    ) -> str:
+        if self._config.enable_link and isinstance(self._llm, StructuredSummaryProvider):
+            attempt = await asyncio.wait_for(
+                self._llm.chat_structured_summary(
+                    structured_prompt,
+                    include_ai_summary=self._config.enable_summary,
+                    style=self._config.note_style,
+                    session_id="BiliVideo_plugin",
+                ),
+                timeout=LLM_CHAT_TIMEOUT_SECONDS,
+            )
+            if attempt.arguments is not None:
+                try:
+                    summary = parse_structured_summary(
+                        attempt.arguments,
+                        max_timestamp_seconds=max_timestamp_seconds,
+                        require_ai_summary=self._config.enable_summary,
+                        style=self._config.note_style,
+                    )
+                except StructuredSummaryError as exc:
+                    logger.warning(f"structured summary rejected; using Markdown fallback: {exc}")
+                else:
+                    logger.info("structured summary accepted from AstrBot tool call")
+                    return structured_summary_to_markdown(summary)
+            if attempt.fallback_text:
+                logger.info("AstrBot returned text instead of a tool call; using it as fallback")
+                return attempt.fallback_text
+
+        return await asyncio.wait_for(
+            self._llm.chat(legacy_prompt, session_id="BiliVideo_plugin"),
+            timeout=LLM_CHAT_TIMEOUT_SECONDS,
+        )
+
+    def _summary_cache_key(self, bvid: str) -> str:
+        provider_identity = type(self._llm).__name__
+        cache_identity = getattr(self._llm, "cache_identity", None)
+        if callable(cache_identity):
+            try:
+                provider_identity = str(cache_identity())
+            except Exception as exc:
+                logger.debug(f"provider cache identity unavailable: {exc}")
+        selected_provider = str(
+            getattr(self._llm, "provider_id", "") or self._config.llm_provider_id
+        )
+        return "|".join(
+            (
+                SUMMARY_FORMAT_VERSION,
+                bvid,
+                self._config.llm_provider,
+                provider_identity,
+                selected_provider,
+                self._config.llm_model,
+                self._config.note_style,
+                f"link={int(self._config.enable_link)}",
+                f"summary={int(self._config.enable_summary)}",
+                f"limit={self._config.max_note_length}",
+            )
+        )

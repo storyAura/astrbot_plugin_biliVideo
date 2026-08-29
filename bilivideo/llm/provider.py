@@ -8,16 +8,32 @@ with the protocol.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from ..core.config import PluginConfig
 from ..core.exceptions import LLMError
+from .structured_summary import StructuredSummaryAttempt
 
 
 class LLMProvider(Protocol):
     """Async interface for any LLM backend."""
 
     async def chat(self, prompt: str, *, session_id: str | None = None) -> str:
+        ...
+
+
+@runtime_checkable
+class StructuredSummaryProvider(Protocol):
+    """Optional structured-output capability implemented only by AstrBot."""
+
+    async def chat_structured_summary(
+        self,
+        prompt: str,
+        *,
+        include_ai_summary: bool,
+        style: str,
+        session_id: str | None = None,
+    ) -> StructuredSummaryAttempt:
         ...
 
 

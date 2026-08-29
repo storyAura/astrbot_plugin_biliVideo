@@ -79,5 +79,5 @@ Conventional commits, e.g.
 - `feat: add cooldown for /最新视频`
 - `fix: handle empty trigger_keywords config`
 - `refactor: split JsonStore into separate module`
-- `docs: clarify wkhtmltopdf install on Docker`
+- `docs: clarify image rendering in Docker`
 - `test: cover smart_truncate boundary cases`
