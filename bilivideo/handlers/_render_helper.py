@@ -31,7 +31,7 @@ async def render_note_components(
 ) -> list[Any] | str:
     """Convert Markdown to image components or raw text — never raises.
 
-    Rendering (wkhtmltoimage subprocess or Pillow CPU drawing) takes seconds,
+    wkhtmltoimage or Python image rendering can take seconds,
     so it runs in a worker thread to keep the event loop responsive.
 
     Any unexpected failure (a renderer surprise, a filesystem error while

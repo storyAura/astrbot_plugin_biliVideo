@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-2.0.1-orange)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/tests-249%20passing-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-299%20passing-success)](tests/)
 
 </div>
 
@@ -22,7 +22,7 @@ biliVideo v2.0 是一次**完全重写**的工程升级。主要目标:
 - **可维护性**:`main.py` 从 2,000 行单一巨型文件瘦身到约 160 行。所有逻辑下放到 `bilivideo/` 子包,按职责严格分层。
 - **健壮性**:HTTP 层采用共享 `aiohttp.ClientSession` + 指数退避重试;订阅文件原子写入 + `fsync`;Cookie 文件 0600 权限。
 - **响应速度**:带 TTL 的 LRU 缓存避免同一 BV 重复请求 B 站;single-flight 让多人同时粘贴同一链接只触发一次工作。
-- **可测试**:249 个 PyTest 单元/集成测试覆盖 URL 解析、分页、智能截断、订阅持久化、冷却、缓存、消息路由、渲染降级链等。
+- **可测试**:299 个 PyTest 单元/集成测试覆盖 URL 解析、分页、智能截断、结构化输出、订阅持久化、冷却、缓存、消息路由、渲染降级链等。
 - **类型化**:所有 API 返回 `dataclass`(`VideoInfo` / `UploaderInfo` / …),配置读取经 `PluginConfig` 校验。
 
 > 命令、配置项、行为对终端用户**完全向后兼容**。配置文件不需要改动即可升级。
@@ -46,8 +46,8 @@ biliVideo v2.0 是一次**完全重写**的工程升级。主要目标:
 
 | 类别 | 特性 |
 | --- | --- |
-| 输出 | 双栏暗色卡片图片 / 纯文本回退 / 合并转发模式 |
-| 总结 | 简洁 / 详细 / 专业 三种风格,LLM 可换 |
+| 输出 | wkhtml HTML/CSS 卡片 / Python Markdown + LaTeX 后备 / 纯文本回退 / 合并转发模式 |
+| 总结 | 简洁 / 详细 / 专业 三种风格;AstrBot 工具调用稳定约束章节时间戳 |
 | 输入 | 完整链接、短链、BV 号、UID、空间链接、UP 主昵称 |
 | 智能 | 自动识别小程序/链接/短链;**触发关键词**配置化 |
 | 订阅 | 订阅 UP 主自动推送;支持指定推送群/QQ |
@@ -71,29 +71,21 @@ biliVideo v2.0 是一次**完全重写**的工程升级。主要目标:
 本插件**无需手动安装任何系统依赖**。AstrBot 安装插件时会自动 `pip install -r requirements.txt`,其中已包含:
 
 - **ffmpeg**:由 `imageio-ffmpeg` 提供静态二进制,无字幕视频走 ASR 转写时自动调用;系统若已装 ffmpeg 则优先用系统版。
-- **图片渲染**:内建 Noto Sans SC 中文字型(GB2312 子集,SIL OFL)+ Pillow,容器无图形环境也能出图。
+- **图片渲染**:检测到 `wkhtmltoimage` 时使用 HTML/CSS 渲染并在服务端预渲染 LaTeX;未检测到时自动使用 Markdown AST + MathText + Pillow 后备。内建 Noto Sans SC 中文字型(GB2312 子集,SIL OFL),容器无图形环境也能出图。
 - 装好后用 `/总结状态` 即可看到检测出的渲染后端与 ffmpeg 来源(系统 / 内建)。
 
-### 可选增强(非必须)
+### 可选增强:wkhtmltopdf HTML/CSS 渲染
 
-#### wkhtmltopdf — 更精美的图片
-
-不装也能出图(Pillow 简洁卡片版)。装了可获得双栏暗色卡片的高保真渲染:
+若系统安装的 wkhtmltopdf 同时提供 `wkhtmltoimage` 且该命令位于 `PATH`,插件会优先使用原有 HTML/CSS 高保真渲染模式。不同 Docker 基础镜像的软件源可用性不同,请使用镜像发行版支持的安装方式或兼容二进制包。
 
 ```bash
-# Ubuntu / Debian
+# 软件源提供该软件包的 Debian / Ubuntu 版本
 apt install -y wkhtmltopdf fonts-wqy-zenhei
-
-# Docker(无图形环境时配 xvfb)
-apt install -y wkhtmltopdf xvfb fonts-wqy-zenhei fonts-noto-cjk
-printf '#!/bin/bash\nxvfb-run --auto-servernum /usr/bin/wkhtmltoimage "$@"\n' > /usr/local/bin/wkhtmltoimage
-chmod +x /usr/local/bin/wkhtmltoimage
-
-# macOS
-brew install wkhtmltopdf
 ```
 
-#### 系统中文字体 — 更全的字形覆盖
+未检测到 `wkhtmltoimage` 时无需额外配置,会自动启用纯 Python 后备渲染。
+
+### 可选增强:系统中文字体
 
 内建字型为 GB2312 子集,已覆盖绝大多数简体中文。若需繁体 / 日文 / 生僻字的完整覆盖,装一个系统 CJK 字体即可(会被优先使用):
 
@@ -102,6 +94,8 @@ apt install -y fonts-noto-cjk    # 或 fonts-wqy-zenhei
 ```
 
 > 纯文本模式:把 `output_image` 设为 `false` 即可完全免图片渲染依赖。
+
+> wkhtml 和纯 Python 后备模式共用 Matplotlib MathText 的 TeX 子集,覆盖分数、根式、上下标、求和、积分、希腊字母和 `\text{}` 等常见总结场景。wkhtml 模式会将公式预渲染为内嵌透明图片,不需要 JavaScript 或网络资源。
 
 ---
 
@@ -209,7 +203,7 @@ AI 自动组合调用两个工具:`bilibili_search_list` 与 `bilibili_search_do
 | 配置 | 默认 | 说明 |
 | --- | --- | --- |
 | `output_image` | `true` | 总结以图片形式发送 |
-| `note_style` | `professional` | `concise` / `detailed` / `professional` |
+| `note_style` | `professional` | `concise`:最多 8 个单句核心观点 / `detailed`:最多 20 章完整记录 / `professional`:最多 12 章结构化分析 |
 | `enable_link` | `true` | 在总结中嵌入时间戳标记 |
 | `enable_summary` | `true` | 末尾添加 AI 总结段落 |
 | `download_quality` | `fast` | `fast`(32k) / `medium`(64k) / `slow`(128k) |
@@ -218,6 +212,8 @@ AI 自动组合调用两个工具:`bilibili_search_list` 与 `bilibili_search_do
 | `llm_provider_id` | `""` | 指定 AstrBot 内置模型 ID(留空=当前模型;用 `/总结模型` 查看可用 ID) |
 | `enable_auto_push` | `false` | 启用定时推送新视频 |
 | `auto_push_summary` | `true` | 推送新视频时是否附带 AI 总结 |
+
+启用 `enable_link` 且使用 AstrBot 内置 Provider 时,插件会在模型声明支持工具调用后要求其提交结构化章节和整数秒时间戳,并校验时间范围与章节顺序。模型或 Provider 不支持工具调用、或结构化结果校验失败时,会自动回退到原有 Markdown 提示词。`openai_compatible` 自建 Provider 始终沿用原有 Markdown 路径,不会收到工具参数。
 | `check_interval_minutes` | `600` | 定时检查间隔 |
 | `max_subscriptions` | `20` | 每个会话最大订阅数 |
 | `enable_miniapp_detect` | `false` | 自动识别群内 B 站链接 |

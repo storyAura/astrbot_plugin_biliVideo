@@ -79,13 +79,13 @@
         "default": "professional",
         "options": ["concise", "detailed", "professional"],
         "description": "风格",
-        "hint": "concise=简洁要点 / detailed=完整记录 / professional=结构化分析"
+        "hint": "concise=最多8个单句核心观点 / detailed=最多20章完整记录 / professional=最多12章结构化分析"
       },
       "enable_link": {
         "type": "bool",
         "default": true,
         "description": "插入时间戳",
-        "hint": "在总结中嵌入 [mm:ss] 跳转标记"
+        "hint": "在总结中嵌入 [mm:ss] 跳转标记；AstrBot 内置且支持工具调用的模型会使用结构化输出，不支持时自动回退"
       },
       "enable_summary": {
         "type": "bool",
@@ -130,7 +130,7 @@
         "type": "bool",
         "default": true,
         "description": "图片输出",
-        "hint": "开箱即用:内建中文字体 + Pillow,无需装 wkhtmltopdf;装了 wkhtmltopdf 则自动用更精美的渲染。关闭则回退纯文本"
+        "hint": "检测到 wkhtmltoimage 时使用 HTML/CSS 高保真渲染,否则使用纯 Python Markdown + LaTeX 渲染。关闭则回退纯文本"
       },
       "enable_auto_split": {
         "type": "bool",
